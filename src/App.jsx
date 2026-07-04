@@ -137,6 +137,12 @@ export default function App() {
   const movementPresetRef = useRef("talking");
   const uploadObjectUrlRef = useRef(null);
   const lipSyncModeRef = useRef("cues");
+  const sceneRef = useRef(null);
+  const loaderRef = useRef(null);
+  const currentVrmRef = useRef(null);
+  const avatarObjectUrlsRef = useRef([]);
+  const avatarsRef = useRef([{ id: "default", name: "ChristianGoblin", url: "/avatars/ChristianGoblin.vrm" }]);
+  const activeAvatarIdRef = useRef("default");
 
   const [isRecording, setIsRecording] = useState(false);
   const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
@@ -228,6 +234,8 @@ export default function App() {
 
       const delta = clock.getDelta();
       elapsedTime += delta;
+
+      const currentVrm = currentVrmRef.current;
 
       if (currentVrm) {
         const audio = audioRef.current;
@@ -441,6 +449,78 @@ export default function App() {
     console.log("Recording stopped.");
   }
 
+  function loadAvatar(avatar) {
+    const scene = sceneRef.current;
+    const loader = loaderRef.current;
+
+    if (!scene || !loader || !avatar) {
+      return;
+    }
+
+    if (currentVrmRef.current?.scene) {
+      scene.remove(currentVrmRef.current.scene);
+    }
+
+    currentVrmRef.current = null;
+
+    loader.load(
+      avatar.url,
+      (gltf) => {
+        const nextVrm = gltf.userData.vrm;
+        currentVrmRef.current = nextVrm;
+        scene.add(nextVrm.scene);
+        nextVrm.scene.rotation.y = 0;
+        applyRelaxedPose(nextVrm);
+        activeAvatarIdRef.current = avatar.id;
+        setActiveAvatarId(avatar.id);
+        console.log("Avatar loaded:", avatar.name, nextVrm);
+      },
+      undefined,
+      (error) => {
+        console.error("Failed to load avatar:", error);
+        alert("Failed to load avatar. Make sure it is a valid VRM file.");
+      }
+    );
+  }
+
+  function handleAvatarUpload(event) {
+    const files = Array.from(event.target.files || []).filter((file) => file.name.toLowerCase().endsWith(".vrm"));
+
+    if (files.length === 0) {
+      return;
+    }
+
+    const roomLeft = Math.max(0, 5 - avatarsRef.current.length);
+    const acceptedFiles = files.slice(0, roomLeft);
+
+    if (acceptedFiles.length === 0) {
+      alert("You can upload up to 5 avatars total.");
+      return;
+    }
+
+    const newAvatars = acceptedFiles.map((file, index) => {
+      const url = URL.createObjectURL(file);
+      avatarObjectUrlsRef.current.push(url);
+
+      return {
+        id: uploaded--,
+        name: file.name.replace(/\.vrm$/i, ""),
+        url,
+      };
+    });
+
+    avatarsRef.current = [...avatarsRef.current, ...newAvatars];
+    setAvatars(avatarsRef.current);
+    loadAvatar(newAvatars[0]);
+  }
+
+  function handleActiveAvatarChange(event) {
+    const avatar = avatarsRef.current.find((item) => item.id === event.target.value);
+    if (avatar) {
+      loadAvatar(avatar);
+    }
+  }
+
   function handleLipSyncModeChange(event) {
     const nextMode = event.target.value;
     lipSyncModeRef.current = nextMode;
@@ -607,6 +687,26 @@ export default function App() {
           </label>
         </div>
 
+        <div className="upload-row">
+          <label>
+            Upload avatars:
+            <input type="file" accept=".vrm" multiple onChange={handleAvatarUpload} />
+          </label>
+        </div>
+
+        <div className="mode-row">
+          <label>
+            Active Avatar:
+            <select value={activeAvatarId} onChange={handleActiveAvatarChange}>
+              {avatars.map((avatar) => (
+                <option key={avatar.id} value={avatar.id}>
+                  {avatar.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <div className="mode-row">
           <label>
             Lip Sync Mode:
@@ -684,6 +784,11 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
+
 
 
 
