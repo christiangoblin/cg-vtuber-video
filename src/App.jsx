@@ -138,6 +138,8 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
   const [lipSyncMode, setLipSyncMode] = useState("cues");
+  const [transcriptText, setTranscriptText] = useState("");
+  const [transcriptFileName, setTranscriptFileName] = useState("");
 
   useEffect(() => {
     fetch("/cues/test-cues.json")
@@ -458,6 +460,48 @@ export default function App() {
     console.log("Uploaded audio file:", file.name);
   }
 
+  function handleTranscriptUpload(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setTranscriptText(String(reader.result || ""));
+      setTranscriptFileName(file.name);
+      console.log("Loaded transcript file:", file.name);
+    };
+
+    reader.onerror = () => {
+      console.error("Failed to read transcript file:", file.name);
+    };
+
+    reader.readAsText(file);
+  }
+
+  function clearTranscript() {
+    setTranscriptText("");
+    setTranscriptFileName("");
+  }
+
+  function downloadTranscript() {
+    const blob = new Blob([transcriptText], {
+      type: "text/plain",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = transcriptFileName || "transcript.txt";
+    link.click();
+
+    URL.revokeObjectURL(url);
+  }
+
   async function handleAudioPlay() {
     setupAudioGraph(audioRef.current);
     await resumeAudioContextIfNeeded();
@@ -492,6 +536,36 @@ export default function App() {
           </label>
         </div>
 
+        <div className="transcript-row">
+          <label>
+            Transcript / script:
+            <input type="file" accept=".txt,text/plain" onChange={handleTranscriptUpload} />
+          </label>
+
+          <textarea
+            value={transcriptText}
+            onChange={(event) => setTranscriptText(event.target.value)}
+            placeholder="Paste or upload a transcript here. This panel is for keeping the script beside the audio. TTS/cue generation still happens through npm commands for now."
+            rows={6}
+          />
+
+          <div className="button-row">
+            <button type="button" onClick={downloadTranscript} disabled={!transcriptText.trim()}>
+              Download Transcript
+            </button>
+
+            <button type="button" onClick={clearTranscript} disabled={!transcriptText.trim()}>
+              Clear Transcript
+            </button>
+          </div>
+
+          {transcriptFileName && (
+            <div className="status-text">
+              Loaded transcript: {transcriptFileName}
+            </div>
+          )}
+        </div>
+
         <div className="button-row">
           <button onClick={startRecording} disabled={isRecording}>
             Start Recording
@@ -505,4 +579,5 @@ export default function App() {
     </main>
   );
 }
+
 
