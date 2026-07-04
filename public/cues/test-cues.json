@@ -1,0 +1,19 @@
+﻿[
+  { "start": 0.00, "end": 0.12, "shape": "aa", "value": 0.85 },
+  { "start": 0.12, "end": 0.24, "shape": "ih", "value": 0.75 },
+  { "start": 0.24, "end": 0.36, "shape": "ou", "value": 0.8 },
+  { "start": 0.36, "end": 0.48, "shape": "ee", "value": 0.7 },
+  { "start": 0.48, "end": 0.60, "shape": "oh", "value": 0.85 },
+
+  { "start": 0.80, "end": 0.95, "shape": "aa", "value": 0.8 },
+  { "start": 0.95, "end": 1.10, "shape": "ee", "value": 0.7 },
+  { "start": 1.10, "end": 1.25, "shape": "oh", "value": 0.85 },
+
+  { "start": 1.60, "end": 1.75, "shape": "ou", "value": 0.75 },
+  { "start": 1.75, "end": 1.90, "shape": "aa", "value": 0.85 },
+  { "start": 1.90, "end": 2.05, "shape": "ih", "value": 0.7 },
+
+  { "start": 2.40, "end": 2.55, "shape": "ee", "value": 0.75 },
+  { "start": 2.55, "end": 2.70, "shape": "aa", "value": 0.85 },
+  { "start": 2.70, "end": 2.85, "shape": "oh", "value": 0.8 }
+]
