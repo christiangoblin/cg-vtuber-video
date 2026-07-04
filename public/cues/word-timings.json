@@ -1,69 +1,45 @@
 ﻿{
-    "duration":  6.808,
+    "duration":  4.274,
     "words":  [
                   {
-                      "text":  "Hello",
+                      "text":  "Testing",
                       "start":  0.137
                   },
                   {
-                      "text":  "this",
-                      "start":  1.26
+                      "text":  "the",
+                      "start":  0.723
                   },
                   {
-                      "text":  "is",
-                      "start":  1.556
+                      "text":  "new",
+                      "start":  0.847
                   },
                   {
-                      "text":  "my",
-                      "start":  1.77
+                      "text":  "npm",
+                      "start":  1.101
                   },
                   {
-                      "text":  "avatar",
-                      "start":  2.004
-                  },
-                  {
-                      "text":  "speaking",
-                      "start":  2.61
-                  },
-                  {
-                      "text":  "from",
-                      "start":  3.272
-                  },
-                  {
-                      "text":  "one",
-                      "start":  3.582
+                      "text":  "demo",
+                      "start":  1.969
                   },
                   {
                       "text":  "command",
-                      "start":  3.892
+                      "start":  2.445
                   },
                   {
-                      "text":  "Now",
-                      "start":  5.807
-                  },
-                  {
-                      "text":  "the",
-                      "start":  6.179
-                  },
-                  {
-                      "text":  "pauses",
-                      "start":  6.317
-                  },
-                  {
-                      "text":  "should",
-                      "start":  6.951
-                  },
-                  {
-                      "text":  "line",
-                      "start":  7.247
-                  },
-                  {
-                      "text":  "up",
-                      "start":  7.598
+                      "text":  "with",
+                      "start":  3.03
                   },
                   {
                       "text":  "better",
-                      "start":  7.833
+                      "start":  3.278
+                  },
+                  {
+                      "text":  "mouth",
+                      "start":  3.664
+                  },
+                  {
+                      "text":  "pauses",
+                      "start":  4.071
                   }
               ]
 }
