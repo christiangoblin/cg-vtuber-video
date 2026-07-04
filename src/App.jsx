@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMHumanBoneName } from "@pixiv/three-vrm";
 import "./App.css";
+import { applyBodyCues, normalizeBodyCueFile } from "./bodyCues.js";
 
 function setBoneRotation(vrm, boneName, x = 0, y = 0, z = 0) {
   const bone = vrm.humanoid?.getNormalizedBoneNode(boneName);
@@ -132,6 +133,7 @@ export default function App() {
   const audioDataRef = useRef(null);
 
   const mouthCuesRef = useRef([]);
+  const bodyCuesRef = useRef([]);
   const uploadObjectUrlRef = useRef(null);
   const lipSyncModeRef = useRef("cues");
 
@@ -230,6 +232,11 @@ export default function App() {
 
         applyRelaxedPose(currentVrm);
         applyIdleAnimation(currentVrm, elapsedTime);
+
+        if (audio && !audio.paused) {
+          applyBodyCues(currentVrm, audio.currentTime, bodyCuesRef.current);
+        }
+
         applyBlinking(currentVrm, elapsedTime);
 
         if (audio && !audio.paused) {
@@ -497,14 +504,16 @@ export default function App() {
       try {
         const parsed = JSON.parse(String(reader.result || "[]"));
         const normalized = normalizeCueFile(parsed);
+        const bodyCues = normalizeBodyCueFile(parsed);
 
         mouthCuesRef.current = normalized;
+        bodyCuesRef.current = bodyCues;
         setCueFileName(file.name);
 
         lipSyncModeRef.current = "cues";
         setLipSyncMode("cues");
 
-        console.log("Loaded custom cue file:", file.name, normalized);
+        console.log("Loaded custom cue file:", file.name, { mouthCues: normalized, bodyCues });
       } catch (error) {
         console.error("Failed to load cue file:", error);
         alert("Failed to load cue file. Check that it is valid JSON.");
@@ -648,6 +657,10 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
 
 
 

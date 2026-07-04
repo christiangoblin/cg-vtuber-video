@@ -1,0 +1,9 @@
+﻿{
+  "version": 1,
+  "timeline": [
+    { "start": 0.5, "end": 1.5, "type": "head", "action": "nod", "intensity": 0.9 },
+    { "start": 1.8, "end": 2.8, "type": "body", "action": "leanForward", "intensity": 0.8 },
+    { "start": 3.0, "end": 4.2, "type": "gesture", "action": "rightHandOut", "intensity": 0.9 },
+    { "start": 4.5, "end": 5.5, "type": "gesture", "action": "bothHandsOut", "intensity": 0.8 }
+  ]
+}
