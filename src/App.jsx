@@ -396,7 +396,7 @@ export default function App() {
       <div className="viewer" ref={mountRef} />
 
       <div className="controls">
-        <audio ref={audioRef} controls src="/audio/test-audio.mp3" />
+        <audio ref={audioRef} controls src="/audio/test-audio.wav" />
 
         <div className="button-row">
           <button onClick={startRecording} disabled={isRecording}>
@@ -411,4 +411,8 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
 

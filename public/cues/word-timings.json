@@ -1,0 +1,69 @@
+﻿{
+    "duration":  6.808,
+    "words":  [
+                  {
+                      "text":  "Hello",
+                      "start":  0.137
+                  },
+                  {
+                      "text":  "this",
+                      "start":  1.26
+                  },
+                  {
+                      "text":  "is",
+                      "start":  1.556
+                  },
+                  {
+                      "text":  "my",
+                      "start":  1.77
+                  },
+                  {
+                      "text":  "avatar",
+                      "start":  2.004
+                  },
+                  {
+                      "text":  "speaking",
+                      "start":  2.61
+                  },
+                  {
+                      "text":  "from",
+                      "start":  3.272
+                  },
+                  {
+                      "text":  "one",
+                      "start":  3.582
+                  },
+                  {
+                      "text":  "command",
+                      "start":  3.892
+                  },
+                  {
+                      "text":  "Now",
+                      "start":  5.807
+                  },
+                  {
+                      "text":  "the",
+                      "start":  6.179
+                  },
+                  {
+                      "text":  "pauses",
+                      "start":  6.317
+                  },
+                  {
+                      "text":  "should",
+                      "start":  6.951
+                  },
+                  {
+                      "text":  "line",
+                      "start":  7.247
+                  },
+                  {
+                      "text":  "up",
+                      "start":  7.598
+                  },
+                  {
+                      "text":  "better",
+                      "start":  7.833
+                  }
+              ]
+}
