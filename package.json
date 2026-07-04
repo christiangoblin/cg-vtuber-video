@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "mouth": "node scripts/generate-mouth-cues.mjs",
     "demo": "powershell -ExecutionPolicy Bypass -File scripts/make-demo.ps1",
-    "demo:rhubarb": "powershell -ExecutionPolicy Bypass -File scripts/make-demo-rhubarb.ps1"
+    "demo:rhubarb": "powershell -ExecutionPolicy Bypass -File scripts/make-demo-rhubarb.ps1",
+    "transcript": "powershell -ExecutionPolicy Bypass -File scripts/make-from-transcript.ps1"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.4",

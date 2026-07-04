@@ -1,0 +1,5 @@
+﻿Hello, this is a transcript file test.
+
+The avatar should read this text from a file instead of from the command line.
+
+This will make longer scripts easier to manage.
