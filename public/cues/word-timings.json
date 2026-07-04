@@ -1,45 +1,25 @@
 ﻿{
-    "duration":  4.274,
+    "duration":  2.559,
     "words":  [
                   {
-                      "text":  "Testing",
+                      "text":  "Your",
                       "start":  0.137
                   },
                   {
-                      "text":  "the",
-                      "start":  0.723
+                      "text":  "avatar",
+                      "start":  0.413
                   },
                   {
-                      "text":  "new",
-                      "start":  0.847
+                      "text":  "sentence",
+                      "start":  0.978
                   },
                   {
-                      "text":  "npm",
-                      "start":  1.101
+                      "text":  "goes",
+                      "start":  1.618
                   },
                   {
-                      "text":  "demo",
-                      "start":  1.969
-                  },
-                  {
-                      "text":  "command",
-                      "start":  2.445
-                  },
-                  {
-                      "text":  "with",
-                      "start":  3.03
-                  },
-                  {
-                      "text":  "better",
-                      "start":  3.278
-                  },
-                  {
-                      "text":  "mouth",
-                      "start":  3.664
-                  },
-                  {
-                      "text":  "pauses",
-                      "start":  4.071
+                      "text":  "here",
+                      "start":  2.018
                   }
               ]
 }

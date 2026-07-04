@@ -9,384 +9,210 @@
     "start": 0.135,
     "end": 0.18,
     "shape": "ee",
-    "value": 0.31
+    "value": 0.59
   },
   {
     "start": 0.18,
     "end": 0.225,
     "shape": "ou",
-    "value": 0.95
+    "value": 0.94
   },
   {
     "start": 0.225,
     "end": 0.27,
     "shape": "aa",
-    "value": 0.76
+    "value": 0.95
   },
   {
     "start": 0.27,
     "end": 0.315,
     "shape": "ih",
-    "value": 0.33
+    "value": 0.48
+  },
+  {
+    "start": 0.315,
+    "end": 0.36,
+    "shape": "oh",
+    "value": 0.68
   },
   {
     "start": 0.36,
     "end": 0.405,
     "shape": "ee",
-    "value": 0.46
+    "value": 0.95
   },
   {
     "start": 0.405,
     "end": 0.45,
     "shape": "ou",
-    "value": 0.95
+    "value": 0.69
   },
   {
     "start": 0.45,
     "end": 0.495,
     "shape": "aa",
-    "value": 0.95
+    "value": 0.62
   },
   {
     "start": 0.495,
     "end": 0.54,
     "shape": "ih",
-    "value": 0.67
+    "value": 0.54
   },
   {
     "start": 0.54,
     "end": 0.585,
     "shape": "oh",
-    "value": 0.68
+    "value": 0.53
   },
   {
     "start": 0.585,
     "end": 0.63,
     "shape": "ee",
-    "value": 0.64
+    "value": 0.95
   },
   {
     "start": 0.63,
     "end": 0.675,
     "shape": "ou",
-    "value": 0.65
+    "value": 0.95
   },
   {
     "start": 0.675,
     "end": 0.72,
     "shape": "aa",
-    "value": 0.93
+    "value": 0.58
   },
   {
     "start": 0.72,
     "end": 0.765,
     "shape": "ih",
-    "value": 0.95
+    "value": 0.43
   },
   {
     "start": 0.765,
     "end": 0.81,
     "shape": "oh",
-    "value": 0.57
+    "value": 0.69
   },
   {
     "start": 0.81,
     "end": 0.855,
     "shape": "ee",
-    "value": 0.38
+    "value": 0.6
   },
   {
     "start": 0.855,
     "end": 0.9,
     "shape": "ou",
-    "value": 0.78
+    "value": 0.95
   },
   {
     "start": 0.9,
     "end": 0.945,
     "shape": "aa",
-    "value": 0.95
+    "value": 0.9
   },
   {
     "start": 0.945,
     "end": 0.99,
     "shape": "ih",
-    "value": 0.59
+    "value": 0.25
+  },
+  {
+    "start": 0.99,
+    "end": 1.035,
+    "shape": "oh",
+    "value": 0.66
+  },
+  {
+    "start": 1.035,
+    "end": 1.08,
+    "shape": "ee",
+    "value": 0.67
   },
   {
     "start": 1.08,
     "end": 1.125,
     "shape": "ou",
-    "value": 0.49
+    "value": 0.53
   },
   {
     "start": 1.125,
     "end": 1.17,
     "shape": "aa",
-    "value": 0.68
-  },
-  {
-    "start": 1.17,
-    "end": 1.215,
-    "shape": "ih",
-    "value": 0.79
+    "value": 0.47
   },
   {
     "start": 1.215,
     "end": 1.26,
     "shape": "oh",
-    "value": 0.42
+    "value": 0.57
   },
   {
     "start": 1.26,
     "end": 1.305,
     "shape": "ee",
-    "value": 0.83
+    "value": 0.94
   },
   {
     "start": 1.305,
     "end": 1.35,
     "shape": "ou",
-    "value": 0.73
+    "value": 0.88
   },
   {
     "start": 1.35,
     "end": 1.395,
     "shape": "aa",
-    "value": 0.7
+    "value": 0.61
   },
   {
     "start": 1.395,
     "end": 1.44,
     "shape": "ih",
-    "value": 0.43
+    "value": 0.48
+  },
+  {
+    "start": 1.44,
+    "end": 1.485,
+    "shape": "oh",
+    "value": 0.25
   },
   {
     "start": 1.485,
     "end": 1.53,
     "shape": "ee",
-    "value": 0.86
+    "value": 0.25
   },
   {
     "start": 1.53,
     "end": 1.575,
     "shape": "ou",
-    "value": 0.95
+    "value": 0.62
   },
   {
     "start": 1.575,
     "end": 1.62,
     "shape": "aa",
-    "value": 0.89
+    "value": 0.86
   },
   {
     "start": 1.62,
     "end": 1.665,
     "shape": "ih",
-    "value": 0.73
+    "value": 0.72
   },
   {
     "start": 1.665,
     "end": 1.71,
     "shape": "oh",
-    "value": 0.95
+    "value": 0.47
   },
   {
     "start": 1.71,
     "end": 1.755,
     "shape": "ee",
-    "value": 0.82
-  },
-  {
-    "start": 1.755,
-    "end": 1.8,
-    "shape": "ou",
     "value": 0.25
-  },
-  {
-    "start": 1.845,
-    "end": 1.89,
-    "shape": "ih",
-    "value": 0.54
-  },
-  {
-    "start": 1.89,
-    "end": 1.935,
-    "shape": "oh",
-    "value": 0.5
-  },
-  {
-    "start": 1.935,
-    "end": 1.98,
-    "shape": "ee",
-    "value": 0.87
-  },
-  {
-    "start": 1.98,
-    "end": 2.025,
-    "shape": "ou",
-    "value": 0.95
-  },
-  {
-    "start": 2.024,
-    "end": 2.069,
-    "shape": "aa",
-    "value": 0.81
-  },
-  {
-    "start": 2.069,
-    "end": 2.114,
-    "shape": "ih",
-    "value": 0.76
-  },
-  {
-    "start": 2.114,
-    "end": 2.159,
-    "shape": "oh",
-    "value": 0.42
-  },
-  {
-    "start": 2.159,
-    "end": 2.204,
-    "shape": "ee",
-    "value": 0.25
-  },
-  {
-    "start": 2.204,
-    "end": 2.249,
-    "shape": "ou",
-    "value": 0.37
-  },
-  {
-    "start": 2.249,
-    "end": 2.294,
-    "shape": "aa",
-    "value": 0.62
-  },
-  {
-    "start": 2.294,
-    "end": 2.339,
-    "shape": "ih",
-    "value": 0.25
-  },
-  {
-    "start": 2.429,
-    "end": 2.474,
-    "shape": "ou",
-    "value": 0.65
-  },
-  {
-    "start": 2.474,
-    "end": 2.519,
-    "shape": "aa",
-    "value": 0.95
-  },
-  {
-    "start": 2.519,
-    "end": 2.564,
-    "shape": "ih",
-    "value": 0.63
-  },
-  {
-    "start": 2.564,
-    "end": 2.609,
-    "shape": "oh",
-    "value": 0.85
-  },
-  {
-    "start": 2.609,
-    "end": 2.654,
-    "shape": "ee",
-    "value": 0.7
-  },
-  {
-    "start": 2.654,
-    "end": 2.699,
-    "shape": "ou",
-    "value": 0.53
-  },
-  {
-    "start": 2.699,
-    "end": 2.744,
-    "shape": "aa",
-    "value": 0.66
-  },
-  {
-    "start": 2.744,
-    "end": 2.789,
-    "shape": "ih",
-    "value": 0.95
-  },
-  {
-    "start": 2.789,
-    "end": 2.834,
-    "shape": "oh",
-    "value": 0.92
-  },
-  {
-    "start": 2.834,
-    "end": 2.879,
-    "shape": "ee",
-    "value": 0.37
-  },
-  {
-    "start": 3.014,
-    "end": 3.059,
-    "shape": "oh",
-    "value": 0.44
-  },
-  {
-    "start": 3.059,
-    "end": 3.104,
-    "shape": "ee",
-    "value": 0.95
-  },
-  {
-    "start": 3.104,
-    "end": 3.149,
-    "shape": "ou",
-    "value": 0.95
-  },
-  {
-    "start": 3.149,
-    "end": 3.194,
-    "shape": "aa",
-    "value": 0.53
-  },
-  {
-    "start": 3.194,
-    "end": 3.239,
-    "shape": "ih",
-    "value": 0.41
-  },
-  {
-    "start": 3.239,
-    "end": 3.284,
-    "shape": "oh",
-    "value": 0.36
-  },
-  {
-    "start": 3.284,
-    "end": 3.329,
-    "shape": "ee",
-    "value": 0.32
-  },
-  {
-    "start": 3.329,
-    "end": 3.374,
-    "shape": "ou",
-    "value": 0.25
-  },
-  {
-    "start": 3.374,
-    "end": 3.419,
-    "shape": "aa",
-    "value": 0.37
-  },
-  {
-    "start": 3.419,
-    "end": 3.464,
-    "shape": "ih",
-    "value": 0.29
   }
 ]
