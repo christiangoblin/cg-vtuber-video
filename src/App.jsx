@@ -153,6 +153,8 @@ export default function App() {
   const [cueFileName, setCueFileName] = useState("test-cues.json");
   const [transcriptText, setTranscriptText] = useState("");
   const [transcriptFileName, setTranscriptFileName] = useState("");
+  const [avatars, setAvatars] = useState([{ id: "default", name: "ChristianGoblin", url: "/avatars/ChristianGoblin.vrm" }]);
+  const [activeAvatarId, setActiveAvatarId] = useState("default");
 
   useEffect(() => {
     fetch("/cues/test-cues.json")
@@ -655,13 +657,18 @@ export default function App() {
         const bodyCues = normalizeBodyCueFile(parsed);
         const avatarCues = normalizeAvatarCueFile(parsed);
 
-        mouthCuesRef.current = normalized;
+        if (normalized.length > 0) {
+          mouthCuesRef.current = normalized;
+        }
+
         bodyCuesRef.current = bodyCues;
         avatarCuesRef.current = avatarCues;
         setCueFileName(file.name);
 
-        lipSyncModeRef.current = "cues";
-        setLipSyncMode("cues");
+        if (normalized.length > 0) {
+          lipSyncModeRef.current = "cues";
+          setLipSyncMode("cues");
+        }
 
         console.log("Loaded custom cue file:", file.name, { mouthCues: normalized, bodyCues, avatarCues });
       } catch (error) {
@@ -767,6 +774,9 @@ export default function App() {
               ))}
             </select>
           </label>
+          <div className="status-text">
+            Timeline avatar names: {avatars.map((avatar) => avatar.name).join(", ")}
+          </div>
         </div>
 
         <div className="mode-row">
@@ -846,6 +856,10 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
 
 
 
