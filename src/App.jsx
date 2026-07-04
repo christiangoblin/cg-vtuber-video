@@ -34,37 +34,10 @@ function applyIdleAnimation(vrm, time) {
 
   vrm.scene.position.y = breath * 0.006;
 
-  setBoneRotation(
-    vrm,
-    VRMHumanBoneName.Spine,
-    breath * 0.012,
-    0,
-    slowSway * 0.01
-  );
-
-  setBoneRotation(
-    vrm,
-    VRMHumanBoneName.Chest,
-    breath * 0.018,
-    0,
-    slowSway * 0.012
-  );
-
-  setBoneRotation(
-    vrm,
-    VRMHumanBoneName.Neck,
-    headNod * 0.012,
-    headTurn * 0.018,
-    0
-  );
-
-  setBoneRotation(
-    vrm,
-    VRMHumanBoneName.Head,
-    headNod * 0.025,
-    headTurn * 0.045,
-    slowSway * 0.012
-  );
+  setBoneRotation(vrm, VRMHumanBoneName.Spine, breath * 0.012, 0, slowSway * 0.01);
+  setBoneRotation(vrm, VRMHumanBoneName.Chest, breath * 0.018, 0, slowSway * 0.012);
+  setBoneRotation(vrm, VRMHumanBoneName.Neck, headNod * 0.012, headTurn * 0.018, 0);
+  setBoneRotation(vrm, VRMHumanBoneName.Head, headNod * 0.025, headTurn * 0.045, slowSway * 0.012);
 }
 
 function hasExpression(vrm, name) {
@@ -113,11 +86,36 @@ function applyMouthCues(vrm, audioTime, cues) {
     return audioTime >= cue.start && audioTime <= cue.end;
   });
 
-  if (!activeCue) {
+  if (!activeCue) return;
+
+  setExpression(vrm, activeCue.shape, activeCue.value ?? 0.8);
+}
+
+function applyLiveAudioMouth(vrm, analyser, dataArray, time) {
+  resetMouthExpressions(vrm);
+
+  if (!analyser || !dataArray) return;
+
+  analyser.getByteTimeDomainData(dataArray);
+
+  let sumSquares = 0;
+
+  for (let i = 0; i < dataArray.length; i++) {
+    const sample = (dataArray[i] - 128) / 128;
+    sumSquares += sample * sample;
+  }
+
+  const rms = Math.sqrt(sumSquares / dataArray.length);
+
+  if (rms < 0.018) {
     return;
   }
 
-  setExpression(vrm, activeCue.shape, activeCue.value ?? 0.8);
+  const value = Math.min(0.95, Math.max(0.25, rms * 9));
+  const shapes = ["aa", "ih", "oh", "ee", "ou"];
+  const shape = shapes[Math.floor(time * 10) % shapes.length];
+
+  setExpression(vrm, shape, value);
 }
 
 export default function App() {
@@ -130,9 +128,16 @@ export default function App() {
   const audioContextRef = useRef(null);
   const audioSourceRef = useRef(null);
   const audioDestinationRef = useRef(null);
+  const audioAnalyserRef = useRef(null);
+  const audioDataRef = useRef(null);
+
   const mouthCuesRef = useRef([]);
+  const uploadObjectUrlRef = useRef(null);
+  const lipSyncModeRef = useRef("cues");
 
   const [isRecording, setIsRecording] = useState(false);
+  const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
+  const [lipSyncMode, setLipSyncMode] = useState("cues");
 
   useEffect(() => {
     fetch("/cues/test-cues.json")
@@ -200,10 +205,7 @@ export default function App() {
         console.log("VRM loaded:", currentVrm);
       },
       (progress) => {
-        console.log(
-          "Loading:",
-          Math.round((progress.loaded / progress.total) * 100) + "%"
-        );
+        console.log("Loading:", Math.round((progress.loaded / progress.total) * 100) + "%");
       },
       (error) => {
         console.error("Failed to load VRM:", error);
@@ -228,7 +230,20 @@ export default function App() {
         applyBlinking(currentVrm, elapsedTime);
 
         if (audio && !audio.paused) {
-          applyMouthCues(currentVrm, audio.currentTime, mouthCuesRef.current);
+          if (lipSyncModeRef.current === "live") {
+            if (!audioAnalyserRef.current) {
+              setupAudioGraph(audio);
+            }
+
+            applyLiveAudioMouth(
+              currentVrm,
+              audioAnalyserRef.current,
+              audioDataRef.current,
+              audio.currentTime
+            );
+          } else {
+            applyMouthCues(currentVrm, audio.currentTime, mouthCuesRef.current);
+          }
         } else {
           resetMouthExpressions(currentVrm);
         }
@@ -256,6 +271,10 @@ export default function App() {
         cancelAnimationFrame(animationFrameId);
       }
 
+      if (uploadObjectUrlRef.current) {
+        URL.revokeObjectURL(uploadObjectUrlRef.current);
+      }
+
       renderer.dispose();
 
       if (renderer.domElement && mount.contains(renderer.domElement)) {
@@ -264,14 +283,15 @@ export default function App() {
     };
   }, []);
 
-  function getAudioTracksForRecording(audio) {
+  function setupAudioGraph(audio) {
     if (!audio) {
       console.warn("No audio element found.");
       return [];
     }
 
     if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      audioContextRef.current = new AudioContextClass();
     }
 
     const audioContext = audioContextRef.current;
@@ -279,17 +299,32 @@ export default function App() {
     if (!audioSourceRef.current) {
       const source = audioContext.createMediaElementSource(audio);
       const destination = audioContext.createMediaStreamDestination();
+      const analyser = audioContext.createAnalyser();
 
+      analyser.fftSize = 1024;
+
+      source.connect(analyser);
+      analyser.connect(audioContext.destination);
       source.connect(destination);
-      source.connect(audioContext.destination);
 
       audioSourceRef.current = source;
       audioDestinationRef.current = destination;
+      audioAnalyserRef.current = analyser;
+      audioDataRef.current = new Uint8Array(analyser.fftSize);
     }
 
-    const tracks = audioDestinationRef.current.stream.getAudioTracks();
-    console.log("Audio tracks for recorder:", tracks);
+    return audioDestinationRef.current.stream.getAudioTracks();
+  }
 
+  async function resumeAudioContextIfNeeded() {
+    if (audioContextRef.current?.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+  }
+
+  function getAudioTracksForRecording(audio) {
+    const tracks = setupAudioGraph(audio);
+    console.log("Audio tracks for recorder:", tracks);
     return tracks;
   }
 
@@ -307,9 +342,7 @@ export default function App() {
 
     const audioTracks = getAudioTracksForRecording(audio);
 
-    if (audioContextRef.current?.state === "suspended") {
-      await audioContextRef.current.resume();
-    }
+    await resumeAudioContextIfNeeded();
 
     const combinedStream = new MediaStream([
       ...canvasStream.getVideoTracks(),
@@ -375,12 +408,11 @@ export default function App() {
 
   function stopRecording() {
     const recorder = recorderRef.current;
+    const audio = audioRef.current;
 
     if (recorder && recorder.state !== "inactive") {
       recorder.stop();
     }
-
-    const audio = audioRef.current;
 
     if (audio) {
       audio.pause();
@@ -391,12 +423,74 @@ export default function App() {
     console.log("Recording stopped.");
   }
 
+  function handleLipSyncModeChange(event) {
+    const nextMode = event.target.value;
+    lipSyncModeRef.current = nextMode;
+    setLipSyncMode(nextMode);
+  }
+
+  function handleAudioUpload(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (uploadObjectUrlRef.current) {
+      URL.revokeObjectURL(uploadObjectUrlRef.current);
+    }
+
+    const url = URL.createObjectURL(file);
+    uploadObjectUrlRef.current = url;
+
+    setAudioSrc(url);
+    lipSyncModeRef.current = "live";
+    setLipSyncMode("live");
+
+    const audio = audioRef.current;
+
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.load();
+    }
+
+    console.log("Uploaded audio file:", file.name);
+  }
+
+  async function handleAudioPlay() {
+    setupAudioGraph(audioRef.current);
+    await resumeAudioContextIfNeeded();
+  }
+
   return (
     <main className="app">
       <div className="viewer" ref={mountRef} />
 
       <div className="controls">
-        <audio ref={audioRef} controls src="/audio/test-audio.wav" />
+        <audio
+          ref={audioRef}
+          controls
+          src={audioSrc}
+          onPlay={handleAudioPlay}
+        />
+
+        <div className="upload-row">
+          <label>
+            Upload audio:
+            <input type="file" accept="audio/*" onChange={handleAudioUpload} />
+          </label>
+        </div>
+
+        <div className="mode-row">
+          <label>
+            Lip Sync Mode:
+            <select value={lipSyncMode} onChange={handleLipSyncModeChange}>
+              <option value="cues">Cue JSON / Rhubarb</option>
+              <option value="live">Live audio loudness</option>
+            </select>
+          </label>
+        </div>
 
         <div className="button-row">
           <button onClick={startRecording} disabled={isRecording}>
@@ -411,12 +505,3 @@ export default function App() {
     </main>
   );
 }
-
-
-
-
-
-
-
-
-
