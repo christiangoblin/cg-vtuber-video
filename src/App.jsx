@@ -143,6 +143,8 @@ export default function App() {
   const avatarObjectUrlsRef = useRef([]);
   const avatarsRef = useRef([{ id: "default", name: "ChristianGoblin", url: "/avatars/ChristianGoblin.vrm" }]);
   const activeAvatarIdRef = useRef("default");
+  const avatarCuesRef = useRef([]);
+  const pendingAvatarIdRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
@@ -234,6 +236,10 @@ export default function App() {
 
       const delta = clock.getDelta();
       elapsedTime += delta;
+
+      if (audioRef.current && !audioRef.current.paused) {
+        applyAvatarCues(audioRef.current.currentTime);
+      }
 
       const currentVrm = currentVrmRef.current;
 
@@ -449,6 +455,39 @@ export default function App() {
     console.log("Recording stopped.");
   }
 
+  function findAvatarForCue(cue) {
+    if (!cue) {
+      return null;
+    }
+
+    if (cue.avatarId) {
+      return avatarsRef.current.find((avatar) => avatar.id === cue.avatarId) || null;
+    }
+
+    if (cue.avatarName) {
+      const wanted = String(cue.avatarName).toLowerCase();
+      return avatarsRef.current.find((avatar) => avatar.name.toLowerCase() === wanted) || null;
+    }
+
+    return null;
+  }
+
+  function applyAvatarCues(time) {
+    const cue = avatarCuesRef.current.find((item) => time >= item.start && time <= item.end);
+    const avatar = findAvatarForCue(cue);
+
+    if (!avatar) {
+      return;
+    }
+
+    if (avatar.id === activeAvatarIdRef.current || avatar.id === pendingAvatarIdRef.current) {
+      return;
+    }
+
+    pendingAvatarIdRef.current = avatar.id;
+    loadAvatar(avatar);
+  }
+
   function loadAvatar(avatar) {
     const scene = sceneRef.current;
     const loader = loaderRef.current;
@@ -473,11 +512,13 @@ export default function App() {
         applyRelaxedPose(nextVrm);
         activeAvatarIdRef.current = avatar.id;
         setActiveAvatarId(avatar.id);
+        pendingAvatarIdRef.current = null;
         console.log("Avatar loaded:", avatar.name, nextVrm);
       },
       undefined,
       (error) => {
         console.error("Failed to load avatar:", error);
+        pendingAvatarIdRef.current = null;
         alert("Failed to load avatar. Make sure it is a valid VRM file.");
       }
     );
@@ -579,6 +620,25 @@ export default function App() {
     throw new Error("Cue file must be an array, or an object with mouthCues/timeline.");
   }
 
+  function normalizeAvatarCueFile(data) {
+    const source = Array.isArray(data)
+      ? data
+      : Array.isArray(data.avatarCues)
+        ? data.avatarCues
+        : Array.isArray(data.timeline)
+          ? data.timeline
+          : [];
+
+    return source
+      .filter((cue) => cue.type === "avatar")
+      .map((cue) => ({
+        start: Number(cue.start ?? 0),
+        end: Number(cue.end ?? cue.start ?? 0),
+        avatarId: cue.avatarId ?? null,
+        avatarName: cue.avatarName ?? cue.name ?? null,
+      }));
+  }
+
   function handleCueUpload(event) {
     const file = event.target.files?.[0];
 
@@ -593,15 +653,17 @@ export default function App() {
         const parsed = JSON.parse(String(reader.result || "[]"));
         const normalized = normalizeCueFile(parsed);
         const bodyCues = normalizeBodyCueFile(parsed);
+        const avatarCues = normalizeAvatarCueFile(parsed);
 
         mouthCuesRef.current = normalized;
         bodyCuesRef.current = bodyCues;
+        avatarCuesRef.current = avatarCues;
         setCueFileName(file.name);
 
         lipSyncModeRef.current = "cues";
         setLipSyncMode("cues");
 
-        console.log("Loaded custom cue file:", file.name, { mouthCues: normalized, bodyCues });
+        console.log("Loaded custom cue file:", file.name, { mouthCues: normalized, bodyCues, avatarCues });
       } catch (error) {
         console.error("Failed to load cue file:", error);
         alert("Failed to load cue file. Check that it is valid JSON.");
@@ -784,6 +846,12 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
+
+
 
 
 
