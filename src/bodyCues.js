@@ -30,3 +30,35 @@ export function applyBodyCues(vrm, time, cues) {
     if (cue.type === "gesture" && cue.action === "bothHandsOut") { rot(vrm, VRMHumanBoneName.LeftUpperArm, -0.45 * s, 0, -0.5 * s); rot(vrm, VRMHumanBoneName.RightUpperArm, -0.45 * s, 0, 0.5 * s); }
   }
 }
+
+export function applyMovementPreset(vrm, time, preset = "neutral") {
+  const talk = Math.sin(time * 5);
+  const slow = Math.sin(time * 1.4);
+  const emphasis = Math.max(0, Math.sin(time * 2.2));
+
+  if (preset === "neutral") {
+    rot(vrm, VRMHumanBoneName.Head, Math.sin(time * 0.8) * 0.025, Math.sin(time * 0.6) * 0.035, 0);
+  }
+
+  if (preset === "talking") {
+    rot(vrm, VRMHumanBoneName.Head, talk * 0.04, slow * 0.08, slow * 0.02);
+    rot(vrm, VRMHumanBoneName.Chest, emphasis * 0.04, 0, slow * 0.035);
+  }
+
+  if (preset === "energetic") {
+    rot(vrm, VRMHumanBoneName.Head, talk * 0.08, slow * 0.14, slow * 0.04);
+    rot(vrm, VRMHumanBoneName.Chest, emphasis * 0.08, 0, slow * 0.07);
+    rot(vrm, VRMHumanBoneName.RightUpperArm, -0.12 * emphasis, 0, 0.45);
+  }
+
+  if (preset === "sermon") {
+    rot(vrm, VRMHumanBoneName.Head, talk * 0.035, slow * 0.06, 0);
+    rot(vrm, VRMHumanBoneName.Chest, 0.06 + emphasis * 0.07, 0, slow * 0.02);
+    rot(vrm, VRMHumanBoneName.RightUpperArm, -0.18 * emphasis, 0, 0.38);
+  }
+
+  if (preset === "dramatic") {
+    rot(vrm, VRMHumanBoneName.Head, slow * 0.09, Math.sin(time * 0.45) * 0.18, slow * 0.055);
+    rot(vrm, VRMHumanBoneName.Chest, emphasis * 0.12, 0, Math.sin(time * 0.8) * 0.08);
+  }
+}

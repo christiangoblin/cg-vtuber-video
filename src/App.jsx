@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMHumanBoneName } from "@pixiv/three-vrm";
 import "./App.css";
-import { applyBodyCues, normalizeBodyCueFile } from "./bodyCues.js";
+import { applyBodyCues, normalizeBodyCueFile, applyMovementPreset } from "./bodyCues.js";
 
 function setBoneRotation(vrm, boneName, x = 0, y = 0, z = 0) {
   const bone = vrm.humanoid?.getNormalizedBoneNode(boneName);
@@ -134,12 +134,14 @@ export default function App() {
 
   const mouthCuesRef = useRef([]);
   const bodyCuesRef = useRef([]);
+  const movementPresetRef = useRef("talking");
   const uploadObjectUrlRef = useRef(null);
   const lipSyncModeRef = useRef("cues");
 
   const [isRecording, setIsRecording] = useState(false);
   const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
   const [lipSyncMode, setLipSyncMode] = useState("cues");
+  const [movementPreset, setMovementPreset] = useState("talking");
   const [cueFileName, setCueFileName] = useState("test-cues.json");
   const [transcriptText, setTranscriptText] = useState("");
   const [transcriptFileName, setTranscriptFileName] = useState("");
@@ -234,7 +236,13 @@ export default function App() {
         applyIdleAnimation(currentVrm, elapsedTime);
 
         if (audio && !audio.paused) {
-          applyBodyCues(currentVrm, audio.currentTime, bodyCuesRef.current);
+          if (bodyCuesRef.current.length > 0) {
+            applyBodyCues(currentVrm, audio.currentTime, bodyCuesRef.current);
+          } else {
+            applyMovementPreset(currentVrm, audio.currentTime, movementPresetRef.current);
+          }
+        } else {
+          applyMovementPreset(currentVrm, elapsedTime, "neutral");
         }
 
         applyBlinking(currentVrm, elapsedTime);
@@ -573,6 +581,12 @@ export default function App() {
     setupAudioGraph(audioRef.current);
     await resumeAudioContextIfNeeded();
   }
+  function handleMovementPresetChange(event) {
+    const preset = event.target.value;
+    movementPresetRef.current = preset;
+    setMovementPreset(preset);
+  }
+
 
   return (
     <main className="app">
@@ -601,6 +615,19 @@ export default function App() {
               <option value="live">Live audio loudness</option>
             </select>
           </label>
+        <div className="mode-row">
+          <label>
+            Movement Preset:
+            <select value={movementPreset} onChange={handleMovementPresetChange}>
+              <option value="neutral">Neutral</option>
+              <option value="talking">Talking</option>
+              <option value="energetic">Energetic</option>
+              <option value="sermon">Sermon</option>
+              <option value="dramatic">Dramatic</option>
+            </select>
+          </label>
+        </div>
+
         </div>
 
         <div className="cue-row">
@@ -657,6 +684,12 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
+
+
 
 
 
