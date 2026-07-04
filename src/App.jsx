@@ -138,6 +138,7 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
   const [lipSyncMode, setLipSyncMode] = useState("cues");
+  const [cueFileName, setCueFileName] = useState("test-cues.json");
   const [transcriptText, setTranscriptText] = useState("");
   const [transcriptFileName, setTranscriptFileName] = useState("");
 
@@ -460,6 +461,63 @@ export default function App() {
     console.log("Uploaded audio file:", file.name);
   }
 
+  function normalizeCueFile(data) {
+    if (Array.isArray(data)) {
+      return data;
+    }
+
+    if (Array.isArray(data.mouthCues)) {
+      return data.mouthCues;
+    }
+
+    if (Array.isArray(data.timeline)) {
+      return data.timeline.filter((cue) => {
+        return cue.type === "mouth" || cue.shape;
+      }).map((cue) => ({
+        start: cue.start,
+        end: cue.end,
+        shape: cue.shape,
+        value: cue.value ?? 0.85
+      }));
+    }
+
+    throw new Error("Cue file must be an array, or an object with mouthCues/timeline.");
+  }
+
+  function handleCueUpload(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || "[]"));
+        const normalized = normalizeCueFile(parsed);
+
+        mouthCuesRef.current = normalized;
+        setCueFileName(file.name);
+
+        lipSyncModeRef.current = "cues";
+        setLipSyncMode("cues");
+
+        console.log("Loaded custom cue file:", file.name, normalized);
+      } catch (error) {
+        console.error("Failed to load cue file:", error);
+        alert("Failed to load cue file. Check that it is valid JSON.");
+      }
+    };
+
+    reader.onerror = () => {
+      console.error("Failed to read cue file:", file.name);
+    };
+
+    reader.readAsText(file);
+  }
+
   function handleTranscriptUpload(event) {
     const file = event.target.files?.[0];
 
@@ -536,6 +594,17 @@ export default function App() {
           </label>
         </div>
 
+        <div className="cue-row">
+          <label>
+            Upload custom mouth/timeline cues:
+            <input type="file" accept=".json,application/json" onChange={handleCueUpload} />
+          </label>
+
+          <div className="status-text">
+            Active cue file: {cueFileName}
+          </div>
+        </div>
+
         <div className="transcript-row">
           <label>
             Transcript / script:
@@ -579,5 +648,6 @@ export default function App() {
     </main>
   );
 }
+
 
 
