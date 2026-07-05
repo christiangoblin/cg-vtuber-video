@@ -124,6 +124,8 @@ export default function App() {
   const audioRef = useRef(null);
   const rendererRef = useRef(null);
   const gridRef = useRef(null);
+  const cameraRef = useRef(null);
+  const framingRef = useRef({ zoom: 3, avatarHeight: 0, avatarX: 0, cameraAngle: 0 });
   const backgroundModeRef = useRef("dark");
   const recorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
@@ -159,6 +161,7 @@ export default function App() {
   const [activeAvatarId, setActiveAvatarId] = useState("default");
   const [backgroundMode, setBackgroundMode] = useState("dark");
   const [showGrid, setShowGrid] = useState(true);
+  const [framing, setFraming] = useState({ zoom: 3, avatarHeight: 0, avatarX: 0, cameraAngle: 0 });
 
   useEffect(() => {
     fetch("/cues/test-cues.json")
@@ -184,6 +187,7 @@ export default function App() {
     );
 
     camera.position.set(0, 1.4, 3);
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -223,6 +227,7 @@ export default function App() {
         currentVrm.scene.rotation.y = 0;
 
         applyRelaxedPose(currentVrm);
+        applyFramingSettings();
 
         console.log("VRM loaded:", currentVrm);
       },
@@ -497,6 +502,32 @@ export default function App() {
     applyBackgroundSettings(backgroundModeRef.current, checked);
   }
 
+  function applyFramingSettings(nextFraming = framingRef.current) {
+    const settings = { ...framingRef.current, ...nextFraming };
+    framingRef.current = settings;
+
+    const camera = cameraRef.current;
+    const avatarScene = currentVrmRef.current?.scene;
+    const zoom = Number(settings.zoom) || 3;
+    const angle = THREE.MathUtils.degToRad(Number(settings.cameraAngle) || 0);
+
+    if (camera) {
+      camera.position.set(Math.sin(angle) * zoom, 1.4, Math.cos(angle) * zoom);
+      camera.lookAt(0, 1.25, 0);
+    }
+
+    if (avatarScene) {
+      avatarScene.position.set(Number(settings.avatarX) || 0, Number(settings.avatarHeight) || 0, 0);
+    }
+  }
+
+  function handleFramingChange(key, value) {
+    const next = { ...framingRef.current, [key]: Number(value) };
+    framingRef.current = next;
+    setFraming(next);
+    applyFramingSettings(next);
+  }
+
   function findAvatarForCue(cue) {
     if (!cue) {
       return null;
@@ -552,6 +583,7 @@ export default function App() {
         scene.add(nextVrm.scene);
         nextVrm.scene.rotation.y = 0;
         applyRelaxedPose(nextVrm);
+        applyFramingSettings();
         activeAvatarIdRef.current = avatar.id;
         setActiveAvatarId(avatar.id);
         pendingAvatarIdRef.current = null;
@@ -858,6 +890,30 @@ export default function App() {
             Show grid
           </label>
         </div>
+        <div className="mode-row">
+          <strong>Camera / Framing</strong>
+
+          <label>
+            Zoom: {framing.zoom}
+            <input type="range" min="1.5" max="6" step="0.1" value={framing.zoom} onChange={(event) => handleFramingChange("zoom", event.target.value)} />
+          </label>
+
+          <label>
+            Avatar Height: {framing.avatarHeight}
+            <input type="range" min="-1" max="1" step="0.05" value={framing.avatarHeight} onChange={(event) => handleFramingChange("avatarHeight", event.target.value)} />
+          </label>
+
+          <label>
+            Left / Right: {framing.avatarX}
+            <input type="range" min="-1" max="1" step="0.05" value={framing.avatarX} onChange={(event) => handleFramingChange("avatarX", event.target.value)} />
+          </label>
+
+          <label>
+            Camera Angle: {framing.cameraAngle}
+            <input type="range" min="-45" max="45" step="1" value={framing.cameraAngle} onChange={(event) => handleFramingChange("cameraAngle", event.target.value)} />
+          </label>
+        </div>
+
 <div className="cue-row">
           <label>
             Upload custom mouth/timeline cues:
@@ -912,6 +968,12 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
+
+
 
 
 
