@@ -4,6 +4,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMHumanBoneName } from "@pixiv/three-vrm";
 import "./App.css";
 import { applyBodyCues, normalizeBodyCueFile, applyMovementPreset, GESTURE_ACTIONS } from "./bodyCues.js";
+import { generateCuesFromTranscript } from "./transcriptCues.js";
+import { buildProjectFile, parseProjectFile } from "./projectFile.js";
+import { createZipBlob, downloadBlob } from "./zipUtils.js";
 
 function setBoneRotation(vrm, boneName, x = 0, y = 0, z = 0) {
   const bone = vrm.humanoid?.getNormalizedBoneNode(boneName);
@@ -138,6 +141,10 @@ export default function App() {
   const backgroundModeRef = useRef("dark");
   const recorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  const recordedVideoBlobRef = useRef(null);
+  const autoStopOnEndRef = useRef(true);
+  const recordingStartedAtRef = useRef(null);
+  const recordingTimerIdRef = useRef(null);
 
   const audioContextRef = useRef(null);
   const audioSourceRef = useRef(null);
@@ -164,6 +171,10 @@ export default function App() {
   const pendingAvatarIdRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
+  const [autoStopOnEnd, setAutoStopOnEnd] = useState(true);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [hasRecordedVideo, setHasRecordedVideo] = useState(false);
+  const [projectStatus, setProjectStatus] = useState("");
   const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
   const [lipSyncMode, setLipSyncMode] = useState("cues");
   const [movementPreset, setMovementPreset] = useState("talking");
@@ -357,6 +368,10 @@ export default function App() {
         cancelAnimationFrame(animationFrameId);
       }
 
+      if (recordingTimerIdRef.current) {
+        clearInterval(recordingTimerIdRef.current);
+      }
+
       if (uploadObjectUrlRef.current) {
         URL.revokeObjectURL(uploadObjectUrlRef.current);
       }
@@ -461,14 +476,10 @@ export default function App() {
         type: "video/webm",
       });
 
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      recordedVideoBlobRef.current = blob;
+      setHasRecordedVideo(true);
 
-      link.href = url;
-      link.download = "vtuber-video.webm";
-      link.click();
-
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, "vtuber-video.webm");
     };
 
     recorderRef.current = recorder;
@@ -480,6 +491,21 @@ export default function App() {
 
     recorder.start();
     setIsRecording(true);
+    setHasRecordedVideo(false);
+    recordedVideoBlobRef.current = null;
+
+    recordingStartedAtRef.current = Date.now();
+    setRecordingElapsed(0);
+
+    if (recordingTimerIdRef.current) {
+      clearInterval(recordingTimerIdRef.current);
+    }
+
+    recordingTimerIdRef.current = setInterval(() => {
+      if (recordingStartedAtRef.current) {
+        setRecordingElapsed((Date.now() - recordingStartedAtRef.current) / 1000);
+      }
+    }, 200);
 
     if (audio) {
       try {
@@ -504,9 +530,28 @@ export default function App() {
       audio.pause();
     }
 
+    if (recordingTimerIdRef.current) {
+      clearInterval(recordingTimerIdRef.current);
+      recordingTimerIdRef.current = null;
+    }
+
+    recordingStartedAtRef.current = null;
     setIsRecording(false);
 
     console.log("Recording stopped.");
+  }
+
+  function handleAudioEnded() {
+    if (recorderRef.current && recorderRef.current.state !== "inactive" && autoStopOnEndRef.current) {
+      console.log("Audio finished — auto-stopping recording.");
+      stopRecording();
+    }
+  }
+
+  function handleAutoStopOnEndChange(event) {
+    const checked = event.target.checked;
+    autoStopOnEndRef.current = checked;
+    setAutoStopOnEnd(checked);
   }
 
   function applyBackgroundSettings(mode = backgroundModeRef.current, gridVisible = showGrid) {
@@ -967,6 +1012,217 @@ export default function App() {
     setBreathingStyle(style);
   }
 
+  function handleGenerateCuesFromTranscript() {
+    const audio = audioRef.current;
+    const duration = audio?.duration;
+
+    if (!transcriptText.trim()) {
+      alert("Add or upload a transcript first.");
+      return;
+    }
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+      alert("Load audio with a known duration first (play it briefly if the length shows as 0:00).");
+      return;
+    }
+
+    try {
+      const { mouthCues, bodyCues, wordCount } = generateCuesFromTranscript(transcriptText, duration);
+
+      mouthCuesRef.current = mouthCues;
+
+      const withIds = bodyCues.map((cue) => ({ ...cue, id: newCueId() }));
+      const keptCues = timelineCuesRef.current.filter(
+        (cue) => cue.type === "avatar" || cue.type === "preset"
+      );
+
+      timelineCuesRef.current = [...keptCues, ...withIds];
+      syncDerivedCueRefs();
+      setTimelineCues(timelineCuesRef.current);
+
+      setCueFileName(`generated from transcript (${wordCount} words)`);
+      lipSyncModeRef.current = "cues";
+      setLipSyncMode("cues");
+
+      console.log("Generated cues from transcript:", { mouthCues, bodyCues });
+    } catch (error) {
+      console.error("Failed to generate cues from transcript:", error);
+      alert(error.message || "Failed to generate cues from transcript.");
+    }
+  }
+
+  function gatherProjectState() {
+    return {
+      audioSrc,
+      transcriptText,
+      transcriptFileName,
+      avatars: avatarsRef.current,
+      activeAvatarId,
+      lipSyncMode,
+      movementPreset,
+      breathingStyle,
+      backgroundMode,
+      showGrid,
+      framing,
+      mouthCues: mouthCuesRef.current,
+      timelineCues: timelineCuesRef.current,
+      cueFileName,
+    };
+  }
+
+  async function handleSaveProject() {
+    try {
+      setProjectStatus("Bundling project…");
+      const blob = await buildProjectFile(gatherProjectState());
+      downloadBlob(blob, "vtuber-project.json");
+      setProjectStatus("Project saved.");
+    } catch (error) {
+      console.error("Failed to save project:", error);
+      setProjectStatus("Failed to save project.");
+      alert("Failed to save project. See console for details.");
+    }
+  }
+
+  function restoreAvatarsFromProject(project) {
+    const restored = project.avatars.map((avatar) => ({
+      id: avatar.id,
+      name: avatar.name,
+      url: avatar.src,
+    }));
+
+    avatarsRef.current = restored.length > 0 ? restored : avatarsRef.current;
+    setAvatars(avatarsRef.current);
+
+    const target =
+      avatarsRef.current.find((avatar) => avatar.id === project.activeAvatarId) || avatarsRef.current[0];
+
+    if (target) {
+      loadAvatar(target);
+    }
+  }
+
+  function restoreCuesFromProject(project) {
+    mouthCuesRef.current = Array.isArray(project.cues.mouthCues) ? project.cues.mouthCues : [];
+
+    const withIds = (project.cues.timeline || []).map((cue) => ({ ...cue, id: newCueId() }));
+    timelineCuesRef.current = withIds;
+    syncDerivedCueRefs();
+    setTimelineCues(withIds);
+    setCueFileName(project.cues.fileName || "loaded project");
+  }
+
+  function restoreSceneFromProject(project) {
+    const scene = project.scene || {};
+
+    lipSyncModeRef.current = scene.lipSyncMode || "cues";
+    setLipSyncMode(lipSyncModeRef.current);
+
+    movementPresetRef.current = scene.movementPreset || "talking";
+    setMovementPreset(movementPresetRef.current);
+
+    breathingStyleRef.current = scene.breathingStyle || "normal";
+    setBreathingStyle(breathingStyleRef.current);
+
+    setBackgroundMode(scene.backgroundMode || "dark");
+    setShowGrid(scene.showGrid ?? true);
+    applyBackgroundSettings(scene.backgroundMode || "dark", scene.showGrid ?? true);
+
+    const nextFraming = scene.framing || framingRef.current;
+    setFraming(nextFraming);
+    applyFramingSettings(nextFraming);
+  }
+
+  function handleLoadProjectFile(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        const project = parseProjectFile(String(reader.result || "{}"));
+
+        if (project.audio?.src) {
+          setAudioSrc(project.audio.src);
+        }
+
+        setTranscriptText(project.transcript?.text || "");
+        setTranscriptFileName(project.transcript?.fileName || "");
+
+        restoreAvatarsFromProject(project);
+        restoreCuesFromProject(project);
+        restoreSceneFromProject(project);
+
+        setProjectStatus(`Loaded project saved ${project.savedAt ? new Date(project.savedAt).toLocaleString() : ""}`);
+        console.log("Loaded project file:", project);
+      } catch (error) {
+        console.error("Failed to load project file:", error);
+        setProjectStatus("Failed to load project file.");
+        alert(error.message || "Failed to load project file.");
+      }
+    };
+
+    reader.onerror = () => {
+      console.error("Failed to read project file:", file.name);
+    };
+
+    reader.readAsText(file);
+  }
+
+  async function handleDownloadBundle() {
+    try {
+      setProjectStatus("Building export bundle…");
+
+      const files = [];
+
+      if (recordedVideoBlobRef.current) {
+        files.push({
+          name: "vtuber-video.webm",
+          data: await recordedVideoBlobRef.current.arrayBuffer(),
+        });
+      }
+
+      if (transcriptText.trim()) {
+        files.push({ name: "transcript.txt", data: transcriptText });
+      }
+
+      const cuesJson = {
+        mouthCues: mouthCuesRef.current,
+        timeline: timelineCuesRef.current.map(({ id: _id, ...rest }) => rest),
+      };
+      files.push({ name: "cues.json", data: JSON.stringify(cuesJson, null, 2) });
+
+      const scenePreset = {
+        lipSyncMode,
+        movementPreset,
+        breathingStyle,
+        backgroundMode,
+        showGrid,
+        framing,
+      };
+      files.push({ name: "scene-preset.json", data: JSON.stringify(scenePreset, null, 2) });
+
+      const projectBlob = await buildProjectFile(gatherProjectState());
+      files.push({ name: "vtuber-project.json", data: await projectBlob.arrayBuffer() });
+
+      const zipBlob = createZipBlob(files);
+      downloadBlob(zipBlob, "vtuber-export-bundle.zip");
+
+      setProjectStatus(
+        recordedVideoBlobRef.current
+          ? "Bundle downloaded (video + transcript + cues + project)."
+          : "Bundle downloaded (no recorded video yet — record first to include one)."
+      );
+    } catch (error) {
+      console.error("Failed to build export bundle:", error);
+      setProjectStatus("Failed to build export bundle.");
+      alert("Failed to build export bundle. See console for details.");
+    }
+  }
+
   function commitAvatarRename(avatarId, nextName) {
     const trimmed = nextName.trim();
     if (!trimmed) return;
@@ -989,329 +1245,415 @@ export default function App() {
           controls
           src={audioSrc}
           onPlay={handleAudioPlay}
+          onEnded={handleAudioEnded}
         />
 
-        <div className="upload-row">
-          <label>
-            Upload audio:
-            <input type="file" accept="audio/*" onChange={handleAudioUpload} />
-          </label>
-        </div>
+        <details className="panel-section" open>
+          <summary>Audio &amp; Recording</summary>
 
-        <div className="upload-row">
-          <label>
-            Upload avatars:
-            <input type="file" accept=".vrm" multiple onChange={handleAvatarUpload} />
-          </label>
-        </div>
-
-        <div className="mode-row">
-          <label>
-            Active Avatar:
-            <select value={activeAvatarId} onChange={handleActiveAvatarChange}>
-              {avatars.map((avatar) => (
-                <option key={avatar.id} value={avatar.id}>
-                  {avatar.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="mode-row avatar-manager">
-          <strong>Avatar Manager</strong>
-          <div className="status-text">
-            Rename avatars here so avatarName cues in your timeline JSON are easy to write correctly.
-          </div>
-
-          {avatars.map((avatar) => (
-            <div className="avatar-manager-row" key={avatar.id}>
-              <input
-                type="text"
-                value={editingAvatarNames[avatar.id] ?? avatar.name}
-                onChange={(event) =>
-                  setEditingAvatarNames((prev) => ({ ...prev, [avatar.id]: event.target.value }))
-                }
-                onBlur={(event) => {
-                  commitAvatarRename(avatar.id, event.target.value);
-                  setEditingAvatarNames((prev) => {
-                    const next = { ...prev };
-                    delete next[avatar.id];
-                    return next;
-                  });
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.target.blur();
-                  }
-                }}
-              />
-              {avatar.id === activeAvatarId && <span className="status-text">(active)</span>}
-            </div>
-          ))}
-        </div>
-        <div className="mode-row">
-          <label>
-            Lip Sync Mode:
-            <select value={lipSyncMode} onChange={handleLipSyncModeChange}>
-              <option value="cues">Cue JSON / Rhubarb</option>
-              <option value="live">Live audio loudness</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="mode-row">
-          <label>
-            Movement Preset:
-            <select value={movementPreset} onChange={handleMovementPresetChange}>
-              <option value="neutral">Neutral</option>
-              <option value="talking">Talking</option>
-              <option value="energetic">Energetic</option>
-              <option value="sermon">Sermon</option>
-              <option value="dramatic">Dramatic</option>
-            </select>
-          </label>
-
-          <label>
-            Breathing Style:
-            <select value={breathingStyle} onChange={handleBreathingStyleChange}>
-              <option value="normal">Normal</option>
-              <option value="calm">Calm</option>
-              <option value="energetic">Energetic</option>
-              <option value="deep">Deep / Sermon</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="mode-row">
-          <label>
-            Background:
-            <select value={backgroundMode} onChange={handleBackgroundModeChange}>
-              <option value="dark">Dark room</option>
-              <option value="green">Green screen</option>
-              <option value="white">White background</option>
-              <option value="gray">Flat gray</option>
-              <option value="blue">Flat blue</option>
-            </select>
-          </label>
-
-          <label>
-            <input type="checkbox" checked={showGrid} onChange={handleShowGridChange} />
-            Show grid
-          </label>
-        </div>
-        <div className="mode-row">
-          <strong>Camera / Framing</strong>
-
-          <label>
-            Zoom: {framing.zoom}
-            <input type="range" min="1.5" max="6" step="0.1" value={framing.zoom} onChange={(event) => handleFramingChange("zoom", event.target.value)} />
-          </label>
-
-          <label>
-            Avatar Height: {framing.avatarHeight}
-            <input type="range" min="-1" max="1" step="0.05" value={framing.avatarHeight} onChange={(event) => handleFramingChange("avatarHeight", event.target.value)} />
-          </label>
-
-          <label>
-            Left / Right: {framing.avatarX}
-            <input type="range" min="-1" max="1" step="0.05" value={framing.avatarX} onChange={(event) => handleFramingChange("avatarX", event.target.value)} />
-          </label>
-
-          <label>
-            Camera Angle: {framing.cameraAngle}
-            <input type="range" min="-45" max="45" step="1" value={framing.cameraAngle} onChange={(event) => handleFramingChange("cameraAngle", event.target.value)} />
-          </label>
-        </div>
-
-<div className="cue-row">
-          <label>
-            Upload custom mouth/timeline cues:
-            <input type="file" accept=".json,application/json" onChange={handleCueUpload} />
-          </label>
-
-          <div className="status-text">
-            Active cue file: {cueFileName}
-          </div>
-        </div>
-
-        <div className="cue-row cue-editor">
-          <strong>Cue Editor</strong>
-          <div className="status-text">
-            Build avatar-switch, gesture, and movement-preset cues without hand-writing JSON.
-            Mouth/lip-sync cues still come from the npm generation scripts or Rhubarb.
-          </div>
-
-          <form className="cue-editor-form" onSubmit={handleAddCue}>
+          <div className="upload-row">
             <label>
-              Cue type:
-              <select value={cueDraft.category} onChange={handleCueCategoryChange}>
-                <option value="avatar">Avatar switch</option>
-                <option value="head">Head movement</option>
-                <option value="body">Body movement</option>
-                <option value="gesture">Gesture</option>
-                <option value="preset">Movement preset moment</option>
+              Upload audio:
+              <input type="file" accept="audio/*" onChange={handleAudioUpload} />
+            </label>
+          </div>
+
+          <div className="mode-row">
+            <label>
+              <input type="checkbox" checked={autoStopOnEnd} onChange={handleAutoStopOnEndChange} />
+              Auto-stop recording when audio ends
+            </label>
+          </div>
+
+          <div className="button-row">
+            <button onClick={startRecording} disabled={isRecording}>
+              Start Recording
+            </button>
+
+            <button onClick={stopRecording} disabled={!isRecording}>
+              Stop Recording
+            </button>
+          </div>
+
+          <div className="status-text">
+            {isRecording
+              ? `Recording… ${recordingElapsed.toFixed(1)}s elapsed`
+              : hasRecordedVideo
+                ? "Last recording ready (included in export bundle below)."
+                : "Not recording. Start Recording plays the audio from 0:00 and captures video automatically."}
+          </div>
+        </details>
+
+        <details className="panel-section">
+          <summary>Avatars</summary>
+
+          <div className="upload-row">
+            <label>
+              Upload avatars:
+              <input type="file" accept=".vrm" multiple onChange={handleAvatarUpload} />
+            </label>
+          </div>
+
+          <div className="mode-row">
+            <label>
+              Active Avatar:
+              <select value={activeAvatarId} onChange={handleActiveAvatarChange}>
+                {avatars.map((avatar) => (
+                  <option key={avatar.id} value={avatar.id}>
+                    {avatar.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mode-row avatar-manager">
+            <strong>Avatar Manager</strong>
+            <div className="status-text">
+              Rename avatars here so avatarName cues in your timeline JSON are easy to write correctly.
+            </div>
+
+            {avatars.map((avatar) => (
+              <div className="avatar-manager-row" key={avatar.id}>
+                <input
+                  type="text"
+                  value={editingAvatarNames[avatar.id] ?? avatar.name}
+                  onChange={(event) =>
+                    setEditingAvatarNames((prev) => ({ ...prev, [avatar.id]: event.target.value }))
+                  }
+                  onBlur={(event) => {
+                    commitAvatarRename(avatar.id, event.target.value);
+                    setEditingAvatarNames((prev) => {
+                      const next = { ...prev };
+                      delete next[avatar.id];
+                      return next;
+                    });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.target.blur();
+                    }
+                  }}
+                />
+                {avatar.id === activeAvatarId && <span className="status-text">(active)</span>}
+              </div>
+            ))}
+          </div>
+        </details>
+
+        <details className="panel-section">
+          <summary>Lip Sync &amp; Movement</summary>
+
+          <div className="mode-row">
+            <label>
+              Lip Sync Mode:
+              <select value={lipSyncMode} onChange={handleLipSyncModeChange}>
+                <option value="cues">Cue JSON / Rhubarb</option>
+                <option value="live">Live audio loudness</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="mode-row">
+            <label>
+              Movement Preset:
+              <select value={movementPreset} onChange={handleMovementPresetChange}>
+                <option value="neutral">Neutral</option>
+                <option value="talking">Talking</option>
+                <option value="energetic">Energetic</option>
+                <option value="sermon">Sermon</option>
+                <option value="dramatic">Dramatic</option>
               </select>
             </label>
 
-            {cueDraft.category === "avatar" && (
-              <label>
-                Switch to avatar:
-                <select
-                  value={cueDraft.avatarId}
-                  onChange={(event) => setCueDraft((draft) => ({ ...draft, avatarId: event.target.value }))}
-                >
-                  {avatars.map((avatar) => (
-                    <option key={avatar.id} value={avatar.id}>
-                      {avatar.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {cueDraft.category === "preset" && (
-              <label>
-                Preset:
-                <select
-                  value={cueDraft.preset}
-                  onChange={(event) => setCueDraft((draft) => ({ ...draft, preset: event.target.value }))}
-                >
-                  <option value="neutral">Neutral</option>
-                  <option value="talking">Talking</option>
-                  <option value="energetic">Energetic</option>
-                  <option value="sermon">Sermon</option>
-                  <option value="dramatic">Dramatic</option>
-                </select>
-              </label>
-            )}
-
-            {["head", "body", "gesture"].includes(cueDraft.category) && (
-              <label>
-                Action:
-                <select
-                  value={cueDraft.action}
-                  onChange={(event) => setCueDraft((draft) => ({ ...draft, action: event.target.value }))}
-                >
-                  {GESTURE_ACTIONS[cueDraft.category].map((action) => (
-                    <option key={action} value={action}>
-                      {action}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
             <label>
-              Start (s):
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={cueDraft.start}
-                onChange={(event) => setCueDraft((draft) => ({ ...draft, start: event.target.value }))}
-              />
+              Breathing Style:
+              <select value={breathingStyle} onChange={handleBreathingStyleChange}>
+                <option value="normal">Normal</option>
+                <option value="calm">Calm</option>
+                <option value="energetic">Energetic</option>
+                <option value="deep">Deep / Sermon</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <details className="panel-section">
+          <summary>Camera &amp; Background</summary>
+
+          <div className="mode-row">
+            <label>
+              Background:
+              <select value={backgroundMode} onChange={handleBackgroundModeChange}>
+                <option value="dark">Dark room</option>
+                <option value="green">Green screen</option>
+                <option value="white">White background</option>
+                <option value="gray">Flat gray</option>
+                <option value="blue">Flat blue</option>
+              </select>
             </label>
 
             <label>
-              End (s):
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={cueDraft.end}
-                onChange={(event) => setCueDraft((draft) => ({ ...draft, end: event.target.value }))}
-              />
+              <input type="checkbox" checked={showGrid} onChange={handleShowGridChange} />
+              Show grid
+            </label>
+          </div>
+
+          <div className="mode-row">
+            <strong>Camera / Framing</strong>
+
+            <label>
+              Zoom: {framing.zoom}
+              <input type="range" min="1.5" max="6" step="0.1" value={framing.zoom} onChange={(event) => handleFramingChange("zoom", event.target.value)} />
             </label>
 
-            {["head", "body", "gesture"].includes(cueDraft.category) && (
+            <label>
+              Avatar Height: {framing.avatarHeight}
+              <input type="range" min="-1" max="1" step="0.05" value={framing.avatarHeight} onChange={(event) => handleFramingChange("avatarHeight", event.target.value)} />
+            </label>
+
+            <label>
+              Left / Right: {framing.avatarX}
+              <input type="range" min="-1" max="1" step="0.05" value={framing.avatarX} onChange={(event) => handleFramingChange("avatarX", event.target.value)} />
+            </label>
+
+            <label>
+              Camera Angle: {framing.cameraAngle}
+              <input type="range" min="-45" max="45" step="1" value={framing.cameraAngle} onChange={(event) => handleFramingChange("cameraAngle", event.target.value)} />
+            </label>
+          </div>
+        </details>
+
+        <details className="panel-section">
+          <summary>Cues &amp; Timeline</summary>
+
+          <div className="cue-row">
+            <label>
+              Upload custom mouth/timeline cues:
+              <input type="file" accept=".json,application/json" onChange={handleCueUpload} />
+            </label>
+
+            <div className="status-text">
+              Active cue file: {cueFileName}
+            </div>
+
+            <button type="button" onClick={handleGenerateCuesFromTranscript} disabled={!transcriptText.trim()}>
+              Auto-Generate Cues from Transcript
+            </button>
+            <div className="status-text">
+              Estimates mouth shapes and sprinkles in head/gesture cues from the transcript text and the
+              loaded audio's duration. Rough and local — the npm/Rhubarb scripts still give a more accurate pass.
+            </div>
+          </div>
+
+          <div className="cue-row cue-editor">
+            <strong>Cue Editor</strong>
+            <div className="status-text">
+              Build avatar-switch, gesture, and movement-preset cues without hand-writing JSON.
+            </div>
+
+            <form className="cue-editor-form" onSubmit={handleAddCue}>
               <label>
-                Intensity:
+                Cue type:
+                <select value={cueDraft.category} onChange={handleCueCategoryChange}>
+                  <option value="avatar">Avatar switch</option>
+                  <option value="head">Head movement</option>
+                  <option value="body">Body movement</option>
+                  <option value="gesture">Gesture</option>
+                  <option value="preset">Movement preset moment</option>
+                </select>
+              </label>
+
+              {cueDraft.category === "avatar" && (
+                <label>
+                  Switch to avatar:
+                  <select
+                    value={cueDraft.avatarId}
+                    onChange={(event) => setCueDraft((draft) => ({ ...draft, avatarId: event.target.value }))}
+                  >
+                    {avatars.map((avatar) => (
+                      <option key={avatar.id} value={avatar.id}>
+                        {avatar.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {cueDraft.category === "preset" && (
+                <label>
+                  Preset:
+                  <select
+                    value={cueDraft.preset}
+                    onChange={(event) => setCueDraft((draft) => ({ ...draft, preset: event.target.value }))}
+                  >
+                    <option value="neutral">Neutral</option>
+                    <option value="talking">Talking</option>
+                    <option value="energetic">Energetic</option>
+                    <option value="sermon">Sermon</option>
+                    <option value="dramatic">Dramatic</option>
+                  </select>
+                </label>
+              )}
+
+              {["head", "body", "gesture"].includes(cueDraft.category) && (
+                <label>
+                  Action:
+                  <select
+                    value={cueDraft.action}
+                    onChange={(event) => setCueDraft((draft) => ({ ...draft, action: event.target.value }))}
+                  >
+                    {GESTURE_ACTIONS[cueDraft.category].map((action) => (
+                      <option key={action} value={action}>
+                        {action}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label>
+                Start (s):
                 <input
                   type="number"
-                  step="0.05"
+                  step="0.1"
                   min="0"
-                  max="1"
-                  value={cueDraft.intensity}
-                  onChange={(event) => setCueDraft((draft) => ({ ...draft, intensity: event.target.value }))}
+                  value={cueDraft.start}
+                  onChange={(event) => setCueDraft((draft) => ({ ...draft, start: event.target.value }))}
                 />
               </label>
+
+              <label>
+                End (s):
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={cueDraft.end}
+                  onChange={(event) => setCueDraft((draft) => ({ ...draft, end: event.target.value }))}
+                />
+              </label>
+
+              {["head", "body", "gesture"].includes(cueDraft.category) && (
+                <label>
+                  Intensity:
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    value={cueDraft.intensity}
+                    onChange={(event) => setCueDraft((draft) => ({ ...draft, intensity: event.target.value }))}
+                  />
+                </label>
+              )}
+
+              <button type="submit">Add Cue</button>
+            </form>
+          </div>
+
+          <div className="cue-row timeline-preview">
+            <strong>Timeline Preview</strong>
+
+            <div className="status-text">
+              0.0s — {avatars.find((avatar) => avatar.id === activeAvatarId)?.name ?? "Avatar"} starts (default)
+            </div>
+
+            {timelineCues.length === 0 ? (
+              <div className="status-text">No avatar/gesture/preset cues yet — add one above or upload a cue file.</div>
+            ) : (
+              <ul className="timeline-list">
+                {[...timelineCues]
+                  .sort((a, b) => a.start - b.start)
+                  .map((cue) => (
+                    <li key={cue.id}>
+                      <span>
+                        {cue.start.toFixed(2)}s – {describeCue(cue)}
+                      </span>
+                      <button type="button" onClick={() => removeTimelineCue(cue.id)}>
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+              </ul>
             )}
 
-            <button type="submit">Add Cue</button>
-          </form>
-        </div>
-
-        <div className="cue-row timeline-preview">
-          <strong>Timeline Preview</strong>
-
-          <div className="status-text">
-            0.0s — {avatars.find((avatar) => avatar.id === activeAvatarId)?.name ?? "Avatar"} starts (default)
-          </div>
-
-          {timelineCues.length === 0 ? (
-            <div className="status-text">No avatar/gesture/preset cues yet — add one above or upload a cue file.</div>
-          ) : (
-            <ul className="timeline-list">
-              {[...timelineCues]
-                .sort((a, b) => a.start - b.start)
-                .map((cue) => (
-                  <li key={cue.id}>
-                    <span>
-                      {cue.start.toFixed(2)}s – {describeCue(cue)}
-                    </span>
-                    <button type="button" onClick={() => removeTimelineCue(cue.id)}>
-                      Remove
-                    </button>
-                  </li>
-                ))}
-            </ul>
-          )}
-
-          <button type="button" onClick={downloadTimelineJson} disabled={timelineCues.length === 0}>
-            Download Timeline JSON
-          </button>
-        </div>
-
-        <div className="transcript-row">
-          <label>
-            Transcript / script:
-            <input type="file" accept=".txt,text/plain" onChange={handleTranscriptUpload} />
-          </label>
-
-          <textarea
-            value={transcriptText}
-            onChange={(event) => setTranscriptText(event.target.value)}
-            placeholder="Paste or upload a transcript here. This panel is for keeping the script beside the audio. TTS/cue generation still happens through npm commands for now."
-            rows={6}
-          />
-
-          <div className="button-row">
-            <button type="button" onClick={downloadTranscript} disabled={!transcriptText.trim()}>
-              Download Transcript
-            </button>
-
-            <button type="button" onClick={clearTranscript} disabled={!transcriptText.trim()}>
-              Clear Transcript
+            <button type="button" onClick={downloadTimelineJson} disabled={timelineCues.length === 0}>
+              Download Timeline JSON
             </button>
           </div>
+        </details>
 
-          {transcriptFileName && (
-            <div className="status-text">
-              Loaded transcript: {transcriptFileName}
+        <details className="panel-section">
+          <summary>Transcript</summary>
+
+          <div className="transcript-row">
+            <label>
+              Transcript / script:
+              <input type="file" accept=".txt,text/plain" onChange={handleTranscriptUpload} />
+            </label>
+
+            <textarea
+              value={transcriptText}
+              onChange={(event) => setTranscriptText(event.target.value)}
+              placeholder="Paste or upload a transcript here. Use Auto-Generate Cues (in Cues & Timeline) to turn this into mouth/body cues."
+              rows={6}
+            />
+
+            <div className="button-row">
+              <button type="button" onClick={downloadTranscript} disabled={!transcriptText.trim()}>
+                Download Transcript
+              </button>
+
+              <button type="button" onClick={clearTranscript} disabled={!transcriptText.trim()}>
+                Clear Transcript
+              </button>
             </div>
-          )}
-        </div>
 
-        <div className="button-row">
-          <button onClick={startRecording} disabled={isRecording}>
-            Start Recording
-          </button>
+            {transcriptFileName && (
+              <div className="status-text">
+                Loaded transcript: {transcriptFileName}
+              </div>
+            )}
+          </div>
+        </details>
 
-          <button onClick={stopRecording} disabled={!isRecording}>
-            Stop Recording
-          </button>
-        </div>
+        <details className="panel-section">
+          <summary>Project &amp; Export</summary>
+
+          <div className="cue-row">
+            <strong>Project</strong>
+            <div className="status-text">
+              Save bundles audio, transcript, avatars, cues, camera, and background into one .json file.
+              Load restores everything from a previously saved project file.
+            </div>
+
+            <div className="button-row">
+              <button type="button" onClick={handleSaveProject}>
+                Save Project
+              </button>
+
+              <label className="file-button">
+                Load Project
+                <input type="file" accept=".json,application/json" onChange={handleLoadProjectFile} />
+              </label>
+            </div>
+          </div>
+
+          <div className="cue-row">
+            <strong>Export Bundle</strong>
+            <div className="status-text">
+              One click, one .zip: last recorded video (if any), transcript, cue JSON, scene preset, and the
+              full project file together.
+            </div>
+
+            <button type="button" onClick={handleDownloadBundle}>
+              Download Everything (.zip)
+            </button>
+          </div>
+
+          {projectStatus && <div className="status-text">{projectStatus}</div>}
+        </details>
       </div>
     </main>
   );

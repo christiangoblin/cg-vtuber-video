@@ -1,25 +1,29 @@
 ﻿{
-    "duration":  2.559,
+    "duration":  2.869,
     "words":  [
                   {
-                      "text":  "Your",
+                      "text":  "Hello",
                       "start":  0.137
                   },
                   {
-                      "text":  "avatar",
-                      "start":  0.413
+                      "text":  "everyone",
+                      "start":  0.64
                   },
                   {
-                      "text":  "sentence",
-                      "start":  0.978
+                      "text":  "welcome",
+                      "start":  1.301
                   },
                   {
-                      "text":  "goes",
-                      "start":  1.618
+                      "text":  "to",
+                      "start":  1.859
                   },
                   {
-                      "text":  "here",
-                      "start":  2.018
+                      "text":  "the",
+                      "start":  2.045
+                  },
+                  {
+                      "text":  "stream",
+                      "start":  2.162
                   }
               ]
 }
