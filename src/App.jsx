@@ -92,12 +92,30 @@ function resetMouthExpressions(vrm) {
   setExpression(vrm, "oh", 0);
 }
 
+// Picks the most relevant cue active at `time` out of possibly-overlapping
+// cues. Uses a half-open interval [start, end) so two cues that touch
+// end-to-end don't both claim the exact boundary frame, and deterministically
+// prefers the cue with the latest start (rather than whichever happens to
+// come first in the array) so cue order in a JSON file can't silently change
+// playback.
+function pickActiveCue(cues, time) {
+  let best = null;
+
+  for (const cue of cues) {
+    if (time >= cue.start && time < cue.end) {
+      if (!best || cue.start > best.start) {
+        best = cue;
+      }
+    }
+  }
+
+  return best;
+}
+
 function applyMouthCues(vrm, audioTime, cues) {
   resetMouthExpressions(vrm);
 
-  const activeCue = cues.find((cue) => {
-    return audioTime >= cue.start && audioTime <= cue.end;
-  });
+  const activeCue = pickActiveCue(cues, audioTime);
 
   if (!activeCue) return;
 
@@ -157,6 +175,13 @@ export default function App() {
   const movementPresetRef = useRef("talking");
   const breathingStyleRef = useRef("normal");
   const uploadObjectUrlRef = useRef(null);
+  const audioIsUploadedRef = useRef(false);
+  // False until the person explicitly uploads a cue file, generates cues
+  // from a transcript, or loads a project with saved cues. The demo cues
+  // fetched from /cues/test-cues.json on startup don't count — they only
+  // match the bundled test-audio.wav, so they shouldn't block switching to
+  // live mic-style lip sync when the person uploads their own audio.
+  const userMouthCuesLoadedRef = useRef(false);
   const lipSyncModeRef = useRef("cues");
   const sceneRef = useRef(null);
   const loaderRef = useRef(null);
@@ -247,7 +272,11 @@ export default function App() {
     gridRef.current = grid;
     scene.add(grid);
 
-    let currentVrm = null;
+    // React StrictMode intentionally mounts, cleans up, and remounts this
+    // effect once in dev. Without this guard, a slow first-mount VRM load
+    // could still resolve after cleanup and write a stale VRM into the
+    // refs shared with the (already running) second mount.
+    let cancelled = false;
 
     const loader = new GLTFLoader();
     loaderRef.current = loader;
@@ -259,7 +288,9 @@ export default function App() {
     loader.load(
       "/avatars/ChristianGoblin.vrm",
       (gltf) => {
-        currentVrm = gltf.userData.vrm;
+        if (cancelled) return;
+
+        const currentVrm = gltf.userData.vrm;
         currentVrmRef.current = currentVrm;
 
         scene.add(currentVrm.scene);
@@ -274,6 +305,7 @@ export default function App() {
         console.log("Loading:", Math.round((progress.loaded / progress.total) * 100) + "%");
       },
       (error) => {
+        if (cancelled) return;
         console.error("Failed to load VRM:", error);
       }
     );
@@ -304,21 +336,27 @@ export default function App() {
           const time = audio.currentTime;
           const activeAvatarId = activeAvatarIdRef.current;
 
+          // Run the movement preset as a continuous base layer every frame,
+          // then layer any active head/body/gesture cues on top of it.
+          // Previously the preset was skipped entirely while a body cue was
+          // active, which made the avatar's talking/energetic motion visibly
+          // cut out and then snap back the instant a short gesture cue
+          // started or ended. Always running the preset underneath means
+          // cues just take over their specific bones for their window and
+          // hand back to a preset that never stopped running.
+          const activePresetCue = pickActiveCue(presetCuesRef.current, time);
+          applyMovementPreset(currentVrm, time, activePresetCue?.preset ?? movementPresetRef.current);
+
           const relevantBodyCues = bodyCuesRef.current.filter(
             (cue) => !cue.avatarId || cue.avatarId === activeAvatarId
           );
 
           const hasActiveBodyCue = relevantBodyCues.some(
-            (cue) => time >= cue.start && time <= cue.end
+            (cue) => time >= cue.start && time < cue.end
           );
 
           if (hasActiveBodyCue) {
             applyBodyCues(currentVrm, time, relevantBodyCues);
-          } else {
-            const activePresetCue = presetCuesRef.current.find(
-              (cue) => time >= cue.start && time <= cue.end
-            );
-            applyMovementPreset(currentVrm, time, activePresetCue?.preset ?? movementPresetRef.current);
           }
         } else {
           applyMovementPreset(currentVrm, elapsedTime, "neutral");
@@ -362,6 +400,7 @@ export default function App() {
     window.addEventListener("resize", handleResize);
 
     return () => {
+      cancelled = true;
       window.removeEventListener("resize", handleResize);
 
       if (animationFrameId) {
@@ -374,6 +413,13 @@ export default function App() {
 
       if (uploadObjectUrlRef.current) {
         URL.revokeObjectURL(uploadObjectUrlRef.current);
+      }
+
+      // Intentionally reading .current here: we want whatever avatar object
+      // URLs have accumulated by unmount time, not a snapshot from mount.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      for (const url of avatarObjectUrlsRef.current) {
+        URL.revokeObjectURL(url);
       }
 
       renderer.dispose();
@@ -633,7 +679,7 @@ export default function App() {
   }
 
   function applyAvatarCues(time) {
-    const cue = avatarCuesRef.current.find((item) => time >= item.start && time <= item.end);
+    const cue = pickActiveCue(avatarCuesRef.current, time);
     const avatar = findAvatarForCue(cue);
 
     if (!avatar) {
@@ -656,16 +702,19 @@ export default function App() {
       return;
     }
 
-    if (currentVrmRef.current?.scene) {
-      scene.remove(currentVrmRef.current.scene);
-    }
-
-    currentVrmRef.current = null;
+    // Keep the current avatar in place until the new one has actually
+    // loaded, so a failed/broken avatar URL doesn't blank the scene.
+    const previousVrm = currentVrmRef.current;
 
     loader.load(
       avatar.url,
       (gltf) => {
         const nextVrm = gltf.userData.vrm;
+
+        if (previousVrm?.scene) {
+          scene.remove(previousVrm.scene);
+        }
+
         currentVrmRef.current = nextVrm;
         scene.add(nextVrm.scene);
         nextVrm.scene.rotation.y = 0;
@@ -680,7 +729,7 @@ export default function App() {
       (error) => {
         console.error("Failed to load avatar:", error);
         pendingAvatarIdRef.current = null;
-        alert("Failed to load avatar. Make sure it is a valid VRM file.");
+        alert("Failed to load avatar. Make sure it is a valid VRM file. Keeping the current avatar.");
       }
     );
   }
@@ -698,6 +747,13 @@ export default function App() {
     if (acceptedFiles.length === 0) {
       alert("You can upload up to 5 avatars total.");
       return;
+    }
+
+    if (acceptedFiles.length < files.length) {
+      alert(
+        `You can upload up to 5 avatars total. Added ${acceptedFiles.length} of ${files.length} — ` +
+        `the rest were skipped.`
+      );
     }
 
     const newAvatars = acceptedFiles.map((file, index) => {
@@ -744,8 +800,22 @@ export default function App() {
     uploadObjectUrlRef.current = url;
 
     setAudioSrc(url);
-    lipSyncModeRef.current = "live";
-    setLipSyncMode("live");
+    audioIsUploadedRef.current = true;
+
+    // Only switch to live lip sync automatically if the person hasn't
+    // actually loaded their own mouth cues — otherwise uploading new audio
+    // would silently throw away cues they already built for their script.
+    // Note this checks userMouthCuesLoadedRef, not mouthCuesRef.length: the
+    // bundled demo cues from test-cues.json are loaded into mouthCuesRef on
+    // startup and are non-empty, but they only line up with the bundled
+    // test-audio.wav. Checking length alone left them in place and applied
+    // to the newly uploaded audio, which just looked like the mouth wasn't
+    // reacting to the new audio at all.
+    if (!userMouthCuesLoadedRef.current) {
+      mouthCuesRef.current = [];
+      lipSyncModeRef.current = "live";
+      setLipSyncMode("live");
+    }
 
     const audio = audioRef.current;
 
@@ -758,17 +828,17 @@ export default function App() {
     console.log("Uploaded audio file:", file.name);
   }
 
+  const MOUTH_SHAPES = new Set(["aa", "ih", "ou", "ee", "oh"]);
+
   function normalizeCueFile(data) {
+    let cues;
+
     if (Array.isArray(data)) {
-      return data;
-    }
-
-    if (Array.isArray(data.mouthCues)) {
-      return data.mouthCues;
-    }
-
-    if (Array.isArray(data.timeline)) {
-      return data.timeline.filter((cue) => {
+      cues = data;
+    } else if (Array.isArray(data.mouthCues)) {
+      cues = data.mouthCues;
+    } else if (Array.isArray(data.timeline)) {
+      cues = data.timeline.filter((cue) => {
         return cue.type === "mouth" || cue.shape;
       }).map((cue) => ({
         start: cue.start,
@@ -776,9 +846,21 @@ export default function App() {
         shape: cue.shape,
         value: cue.value ?? 0.85
       }));
+    } else {
+      throw new Error("Cue file must be an array, or an object with mouthCues/timeline.");
     }
 
-    throw new Error("Cue file must be an array, or an object with mouthCues/timeline.");
+    const usable = cues.filter((cue) => MOUTH_SHAPES.has(cue.shape));
+
+    if (cues.length > 0 && usable.length === 0) {
+      throw new Error(
+        "This cue file doesn't contain usable mouth shapes (aa/ih/ou/ee/oh). If this is a raw " +
+        "Rhubarb export (letter codes like X/A/B/C in a \"value\" field), convert it first with " +
+        "`npm run mouth` (scripts/convert-rhubarb-to-vrm.mjs) and upload the converted file instead."
+      );
+    }
+
+    return usable;
   }
 
   function normalizeAvatarCueFile(data) {
@@ -923,6 +1005,7 @@ export default function App() {
 
         if (normalized.length > 0) {
           mouthCuesRef.current = normalized;
+          userMouthCuesLoadedRef.current = true;
         }
 
         const combined = [...bodyCues, ...avatarCues, ...presetCues].map((cue) => ({
@@ -1012,24 +1095,67 @@ export default function App() {
     setBreathingStyle(style);
   }
 
-  function handleGenerateCuesFromTranscript() {
+  // Browsers often don't populate audio.duration until metadata has loaded,
+  // which may not have happened yet if the person just picked a file/loaded
+  // the page without pressing play. Wait briefly for it instead of forcing
+  // them to play the audio first just to "unlock" its duration.
+  function waitForAudioDuration(audio, timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        resolve(audio.duration);
+        return;
+      }
+
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        audio.removeEventListener("loadedmetadata", onLoaded);
+        clearTimeout(timer);
+        resolve(value);
+      };
+
+      const onLoaded = () => finish(audio.duration);
+      audio.addEventListener("loadedmetadata", onLoaded);
+
+      const timer = setTimeout(() => finish(audio.duration), timeoutMs);
+
+      // Nudge the browser to fetch metadata if it hasn't already.
+      if (audio.readyState === 0) {
+        audio.load();
+      }
+    });
+  }
+
+  async function handleGenerateCuesFromTranscript() {
     const audio = audioRef.current;
-    const duration = audio?.duration;
 
     if (!transcriptText.trim()) {
       alert("Add or upload a transcript first.");
       return;
     }
 
-    if (!Number.isFinite(duration) || duration <= 0) {
-      alert("Load audio with a known duration first (play it briefly if the length shows as 0:00).");
+    if (!audio) {
+      alert("Load audio first.");
       return;
     }
+
+    setProjectStatus("Reading audio duration…");
+    const duration = await waitForAudioDuration(audio);
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+      setProjectStatus("");
+      alert("Couldn't read the audio's duration. Try playing it briefly, then generate cues again.");
+      return;
+    }
+
+    setProjectStatus("");
 
     try {
       const { mouthCues, bodyCues, wordCount } = generateCuesFromTranscript(transcriptText, duration);
 
       mouthCuesRef.current = mouthCues;
+      userMouthCuesLoadedRef.current = true;
 
       const withIds = bodyCues.map((cue) => ({ ...cue, id: newCueId() }));
       const keptCues = timelineCuesRef.current.filter(
@@ -1054,6 +1180,7 @@ export default function App() {
   function gatherProjectState() {
     return {
       audioSrc,
+      audioIsUploaded: audioIsUploadedRef.current,
       transcriptText,
       transcriptFileName,
       avatars: avatarsRef.current,
@@ -1103,6 +1230,7 @@ export default function App() {
 
   function restoreCuesFromProject(project) {
     mouthCuesRef.current = Array.isArray(project.cues.mouthCues) ? project.cues.mouthCues : [];
+    userMouthCuesLoadedRef.current = mouthCuesRef.current.length > 0;
 
     const withIds = (project.cues.timeline || []).map((cue) => ({ ...cue, id: newCueId() }));
     timelineCuesRef.current = withIds;
@@ -1148,6 +1276,7 @@ export default function App() {
         if (project.audio?.src) {
           setAudioSrc(project.audio.src);
         }
+        audioIsUploadedRef.current = Boolean(project.audio?.isEmbedded);
 
         setTranscriptText(project.transcript?.text || "");
         setTranscriptFileName(project.transcript?.fileName || "");

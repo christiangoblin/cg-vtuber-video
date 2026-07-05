@@ -30,6 +30,9 @@ body,
   border-radius: 10px;
   z-index: 9999;
   pointer-events: auto;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .controls audio {
