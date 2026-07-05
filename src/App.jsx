@@ -123,6 +123,8 @@ export default function App() {
   const mountRef = useRef(null);
   const audioRef = useRef(null);
   const rendererRef = useRef(null);
+  const gridRef = useRef(null);
+  const backgroundModeRef = useRef("dark");
   const recorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
 
@@ -155,6 +157,8 @@ export default function App() {
   const [transcriptFileName, setTranscriptFileName] = useState("");
   const [avatars, setAvatars] = useState([{ id: "default", name: "ChristianGoblin", url: "/avatars/ChristianGoblin.vrm" }]);
   const [activeAvatarId, setActiveAvatarId] = useState("default");
+  const [backgroundMode, setBackgroundMode] = useState("dark");
+  const [showGrid, setShowGrid] = useState(true);
 
   useEffect(() => {
     fetch("/cues/test-cues.json")
@@ -199,6 +203,7 @@ export default function App() {
     scene.add(ambientLight);
 
     const grid = new THREE.GridHelper(10, 10);
+    gridRef.current = grid;
     scene.add(grid);
 
     let currentVrm = null;
@@ -455,6 +460,41 @@ export default function App() {
     setIsRecording(false);
 
     console.log("Recording stopped.");
+  }
+
+  function applyBackgroundSettings(mode = backgroundModeRef.current, gridVisible = showGrid) {
+    const scene = sceneRef.current;
+    const grid = gridRef.current;
+
+    backgroundModeRef.current = mode;
+
+    const colors = {
+      dark: 0x202020,
+      green: 0x00ff00,
+      white: 0xffffff,
+      gray: 0x808080,
+      blue: 0x5d7ea0,
+    };
+
+    if (scene) {
+      scene.background = new THREE.Color(colors[mode] ?? colors.dark);
+    }
+
+    if (grid) {
+      grid.visible = gridVisible;
+    }
+  }
+
+  function handleBackgroundModeChange(event) {
+    const mode = event.target.value;
+    setBackgroundMode(mode);
+    applyBackgroundSettings(mode, showGrid);
+  }
+
+  function handleShowGridChange(event) {
+    const checked = event.target.checked;
+    setShowGrid(checked);
+    applyBackgroundSettings(backgroundModeRef.current, checked);
   }
 
   function findAvatarForCue(cue) {
@@ -778,7 +818,6 @@ export default function App() {
             Timeline avatar names: {avatars.map((avatar) => avatar.name).join(", ")}
           </div>
         </div>
-
         <div className="mode-row">
           <label>
             Lip Sync Mode:
@@ -787,6 +826,8 @@ export default function App() {
               <option value="live">Live audio loudness</option>
             </select>
           </label>
+        </div>
+
         <div className="mode-row">
           <label>
             Movement Preset:
@@ -800,9 +841,24 @@ export default function App() {
           </label>
         </div>
 
-        </div>
+        <div className="mode-row">
+          <label>
+            Background:
+            <select value={backgroundMode} onChange={handleBackgroundModeChange}>
+              <option value="dark">Dark room</option>
+              <option value="green">Green screen</option>
+              <option value="white">White background</option>
+              <option value="gray">Flat gray</option>
+              <option value="blue">Flat blue</option>
+            </select>
+          </label>
 
-        <div className="cue-row">
+          <label>
+            <input type="checkbox" checked={showGrid} onChange={handleShowGridChange} />
+            Show grid
+          </label>
+        </div>
+<div className="cue-row">
           <label>
             Upload custom mouth/timeline cues:
             <input type="file" accept=".json,application/json" onChange={handleCueUpload} />
@@ -856,6 +912,11 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
+
 
 
 
