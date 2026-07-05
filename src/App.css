@@ -113,3 +113,77 @@ body,
 .cue-row input {
   max-width: 320px;
 }
+
+.avatar-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.avatar-manager-row input {
+  max-width: 200px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background: #111;
+  color: white;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+}
+
+.cue-editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  max-width: 320px;
+}
+
+.cue-editor-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cue-editor-form select,
+.cue-editor-form input {
+  max-width: 320px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background: #111;
+  color: white;
+}
+
+.cue-editor-form button {
+  align-self: flex-start;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.timeline-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  max-width: 320px;
+}
+
+.timeline-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #444;
+  font-size: 13px;
+}
+
+.timeline-list li button {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}

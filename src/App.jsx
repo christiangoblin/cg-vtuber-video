@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMHumanBoneName } from "@pixiv/three-vrm";
 import "./App.css";
-import { applyBodyCues, normalizeBodyCueFile, applyMovementPreset } from "./bodyCues.js";
+import { applyBodyCues, normalizeBodyCueFile, applyMovementPreset, GESTURE_ACTIONS } from "./bodyCues.js";
 
 function setBoneRotation(vrm, boneName, x = 0, y = 0, z = 0) {
   const bone = vrm.humanoid?.getNormalizedBoneNode(boneName);
@@ -27,16 +27,25 @@ function applyRelaxedPose(vrm) {
   setBoneRotation(vrm, VRMHumanBoneName.RightHand, 0, 0, -Math.PI * 0.03);
 }
 
-function applyIdleAnimation(vrm, time) {
-  const breath = Math.sin(time * 2.0);
-  const slowSway = Math.sin(time * 0.8);
+const BREATHING_STYLES = {
+  normal: { rate: 2.0, sway: 0.8, ampY: 0.006, ampSpine: 0.012, ampChest: 0.018 },
+  calm: { rate: 1.2, sway: 0.5, ampY: 0.004, ampSpine: 0.008, ampChest: 0.012 },
+  energetic: { rate: 3.0, sway: 1.1, ampY: 0.008, ampSpine: 0.016, ampChest: 0.024 },
+  deep: { rate: 1.0, sway: 0.6, ampY: 0.009, ampSpine: 0.02, ampChest: 0.03 },
+};
+
+function applyIdleAnimation(vrm, time, style = "normal") {
+  const cfg = BREATHING_STYLES[style] ?? BREATHING_STYLES.normal;
+
+  const breath = Math.sin(time * cfg.rate);
+  const slowSway = Math.sin(time * cfg.sway);
   const headTurn = Math.sin(time * 0.7);
   const headNod = Math.sin(time * 0.55);
 
-  vrm.scene.position.y = breath * 0.006;
+  vrm.scene.position.y = breath * cfg.ampY;
 
-  setBoneRotation(vrm, VRMHumanBoneName.Spine, breath * 0.012, 0, slowSway * 0.01);
-  setBoneRotation(vrm, VRMHumanBoneName.Chest, breath * 0.018, 0, slowSway * 0.012);
+  setBoneRotation(vrm, VRMHumanBoneName.Spine, breath * cfg.ampSpine, 0, slowSway * 0.01);
+  setBoneRotation(vrm, VRMHumanBoneName.Chest, breath * cfg.ampChest, 0, slowSway * 0.012);
   setBoneRotation(vrm, VRMHumanBoneName.Neck, headNod * 0.012, headTurn * 0.018, 0);
   setBoneRotation(vrm, VRMHumanBoneName.Head, headNod * 0.025, headTurn * 0.045, slowSway * 0.012);
 }
@@ -139,6 +148,7 @@ export default function App() {
   const mouthCuesRef = useRef([]);
   const bodyCuesRef = useRef([]);
   const movementPresetRef = useRef("talking");
+  const breathingStyleRef = useRef("normal");
   const uploadObjectUrlRef = useRef(null);
   const lipSyncModeRef = useRef("cues");
   const sceneRef = useRef(null);
@@ -148,12 +158,17 @@ export default function App() {
   const avatarsRef = useRef([{ id: "default", name: "ChristianGoblin", url: "/avatars/ChristianGoblin.vrm" }]);
   const activeAvatarIdRef = useRef("default");
   const avatarCuesRef = useRef([]);
+  const presetCuesRef = useRef([]);
+  const timelineCuesRef = useRef([]);
+  const nextCueIdRef = useRef(1);
   const pendingAvatarIdRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [audioSrc, setAudioSrc] = useState("/audio/test-audio.wav");
   const [lipSyncMode, setLipSyncMode] = useState("cues");
   const [movementPreset, setMovementPreset] = useState("talking");
+  const [breathingStyle, setBreathingStyle] = useState("normal");
+  const [editingAvatarNames, setEditingAvatarNames] = useState({});
   const [cueFileName, setCueFileName] = useState("test-cues.json");
   const [transcriptText, setTranscriptText] = useState("");
   const [transcriptFileName, setTranscriptFileName] = useState("");
@@ -162,6 +177,16 @@ export default function App() {
   const [backgroundMode, setBackgroundMode] = useState("dark");
   const [showGrid, setShowGrid] = useState(true);
   const [framing, setFraming] = useState({ zoom: 3, avatarHeight: 0, avatarX: 0, cameraAngle: 0 });
+  const [timelineCues, setTimelineCues] = useState([]);
+  const [cueDraft, setCueDraft] = useState({
+    category: "avatar",
+    action: GESTURE_ACTIONS.head[0],
+    avatarId: "default",
+    preset: "talking",
+    start: "0",
+    end: "1",
+    intensity: "0.7",
+  });
 
   useEffect(() => {
     fetch("/cues/test-cues.json")
@@ -178,6 +203,7 @@ export default function App() {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x202020);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(
       30,
@@ -213,6 +239,7 @@ export default function App() {
     let currentVrm = null;
 
     const loader = new GLTFLoader();
+    loaderRef.current = loader;
 
     loader.register((parser) => {
       return new VRMLoaderPlugin(parser);
@@ -222,6 +249,7 @@ export default function App() {
       "/avatars/ChristianGoblin.vrm",
       (gltf) => {
         currentVrm = gltf.userData.vrm;
+        currentVrmRef.current = currentVrm;
 
         scene.add(currentVrm.scene);
         currentVrm.scene.rotation.y = 0;
@@ -259,13 +287,27 @@ export default function App() {
         const audio = audioRef.current;
 
         applyRelaxedPose(currentVrm);
-        applyIdleAnimation(currentVrm, elapsedTime);
+        applyIdleAnimation(currentVrm, elapsedTime, breathingStyleRef.current);
 
         if (audio && !audio.paused) {
-          if (bodyCuesRef.current.length > 0) {
-            applyBodyCues(currentVrm, audio.currentTime, bodyCuesRef.current);
+          const time = audio.currentTime;
+          const activeAvatarId = activeAvatarIdRef.current;
+
+          const relevantBodyCues = bodyCuesRef.current.filter(
+            (cue) => !cue.avatarId || cue.avatarId === activeAvatarId
+          );
+
+          const hasActiveBodyCue = relevantBodyCues.some(
+            (cue) => time >= cue.start && time <= cue.end
+          );
+
+          if (hasActiveBodyCue) {
+            applyBodyCues(currentVrm, time, relevantBodyCues);
           } else {
-            applyMovementPreset(currentVrm, audio.currentTime, movementPresetRef.current);
+            const activePresetCue = presetCuesRef.current.find(
+              (cue) => time >= cue.start && time <= cue.end
+            );
+            applyMovementPreset(currentVrm, time, activePresetCue?.preset ?? movementPresetRef.current);
           }
         } else {
           applyMovementPreset(currentVrm, elapsedTime, "neutral");
@@ -618,7 +660,7 @@ export default function App() {
       avatarObjectUrlsRef.current.push(url);
 
       return {
-        id: uploaded--,
+        id: `uploaded-${Date.now()}-${index}`,
         name: file.name.replace(/\.vrm$/i, ""),
         url,
       };
@@ -713,6 +755,110 @@ export default function App() {
       }));
   }
 
+  function normalizePresetCueFile(data) {
+    const source = Array.isArray(data) ? data : Array.isArray(data.timeline) ? data.timeline : [];
+
+    return source
+      .filter((cue) => cue.type === "preset")
+      .map((cue) => ({
+        start: Number(cue.start ?? 0),
+        end: Number(cue.end ?? cue.start ?? 0),
+        preset: cue.preset ?? "neutral",
+      }));
+  }
+
+  function newCueId() {
+    return `cue-${nextCueIdRef.current++}`;
+  }
+
+  function syncDerivedCueRefs() {
+    const all = timelineCuesRef.current;
+    bodyCuesRef.current = all.filter((cue) => cue.type === "head" || cue.type === "body" || cue.type === "gesture");
+    avatarCuesRef.current = all.filter((cue) => cue.type === "avatar");
+    presetCuesRef.current = all.filter((cue) => cue.type === "preset");
+  }
+
+  function addTimelineCue(cue) {
+    const withId = { ...cue, id: newCueId() };
+    timelineCuesRef.current = [...timelineCuesRef.current, withId];
+    syncDerivedCueRefs();
+    setTimelineCues(timelineCuesRef.current);
+  }
+
+  function removeTimelineCue(id) {
+    timelineCuesRef.current = timelineCuesRef.current.filter((cue) => cue.id !== id);
+    syncDerivedCueRefs();
+    setTimelineCues(timelineCuesRef.current);
+  }
+
+  function handleCueCategoryChange(event) {
+    const category = event.target.value;
+    setCueDraft((prev) => ({
+      ...prev,
+      category,
+      action: ["head", "body", "gesture"].includes(category) ? GESTURE_ACTIONS[category][0] : prev.action,
+    }));
+  }
+
+  function handleAddCue(event) {
+    event.preventDefault();
+
+    const start = Number(cueDraft.start);
+    const end = Number(cueDraft.end);
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      alert("Enter a valid start/end time (end must be greater than or equal to start).");
+      return;
+    }
+
+    if (cueDraft.category === "avatar") {
+      const avatar = avatarsRef.current.find((item) => item.id === cueDraft.avatarId);
+      addTimelineCue({
+        type: "avatar",
+        start,
+        end,
+        avatarId: cueDraft.avatarId,
+        avatarName: avatar?.name ?? null,
+      });
+    } else if (cueDraft.category === "preset") {
+      addTimelineCue({ type: "preset", start, end, preset: cueDraft.preset });
+    } else {
+      addTimelineCue({
+        type: cueDraft.category,
+        action: cueDraft.action,
+        start,
+        end,
+        intensity: Number(cueDraft.intensity) || 0.7,
+      });
+    }
+  }
+
+  function describeCue(cue) {
+    if (cue.type === "avatar") {
+      return `Switch avatar to ${cue.avatarName || cue.avatarId || "?"}`;
+    }
+    if (cue.type === "preset") {
+      return `Movement preset: ${cue.preset}`;
+    }
+    return `${cue.type} gesture: ${cue.action}`;
+  }
+
+  function downloadTimelineJson() {
+    const timeline = timelineCuesRef.current.map(({ id: _id, ...rest }) => rest);
+    const blob = new Blob([JSON.stringify({ timeline }, null, 2)], {
+      type: "application/json",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "timeline-cues.json";
+    link.click();
+
+    URL.revokeObjectURL(url);
+  }
+
   function handleCueUpload(event) {
     const file = event.target.files?.[0];
 
@@ -727,14 +873,21 @@ export default function App() {
         const parsed = JSON.parse(String(reader.result || "[]"));
         const normalized = normalizeCueFile(parsed);
         const bodyCues = normalizeBodyCueFile(parsed);
-        const avatarCues = normalizeAvatarCueFile(parsed);
+        const avatarCues = normalizeAvatarCueFile(parsed).map((cue) => ({ ...cue, type: "avatar" }));
+        const presetCues = normalizePresetCueFile(parsed).map((cue) => ({ ...cue, type: "preset" }));
 
         if (normalized.length > 0) {
           mouthCuesRef.current = normalized;
         }
 
-        bodyCuesRef.current = bodyCues;
-        avatarCuesRef.current = avatarCues;
+        const combined = [...bodyCues, ...avatarCues, ...presetCues].map((cue) => ({
+          ...cue,
+          id: newCueId(),
+        }));
+
+        timelineCuesRef.current = combined;
+        syncDerivedCueRefs();
+        setTimelineCues(combined);
         setCueFileName(file.name);
 
         if (normalized.length > 0) {
@@ -742,7 +895,7 @@ export default function App() {
           setLipSyncMode("cues");
         }
 
-        console.log("Loaded custom cue file:", file.name, { mouthCues: normalized, bodyCues, avatarCues });
+        console.log("Loaded custom cue file:", file.name, { mouthCues: normalized, timeline: combined });
       } catch (error) {
         console.error("Failed to load cue file:", error);
         alert("Failed to load cue file. Check that it is valid JSON.");
@@ -808,6 +961,23 @@ export default function App() {
     setMovementPreset(preset);
   }
 
+  function handleBreathingStyleChange(event) {
+    const style = event.target.value;
+    breathingStyleRef.current = style;
+    setBreathingStyle(style);
+  }
+
+  function commitAvatarRename(avatarId, nextName) {
+    const trimmed = nextName.trim();
+    if (!trimmed) return;
+
+    avatarsRef.current = avatarsRef.current.map((avatar) =>
+      avatar.id === avatarId ? { ...avatar, name: trimmed } : avatar
+    );
+
+    setAvatars(avatarsRef.current);
+  }
+
 
   return (
     <main className="app">
@@ -846,9 +1016,39 @@ export default function App() {
               ))}
             </select>
           </label>
+        </div>
+
+        <div className="mode-row avatar-manager">
+          <strong>Avatar Manager</strong>
           <div className="status-text">
-            Timeline avatar names: {avatars.map((avatar) => avatar.name).join(", ")}
+            Rename avatars here so avatarName cues in your timeline JSON are easy to write correctly.
           </div>
+
+          {avatars.map((avatar) => (
+            <div className="avatar-manager-row" key={avatar.id}>
+              <input
+                type="text"
+                value={editingAvatarNames[avatar.id] ?? avatar.name}
+                onChange={(event) =>
+                  setEditingAvatarNames((prev) => ({ ...prev, [avatar.id]: event.target.value }))
+                }
+                onBlur={(event) => {
+                  commitAvatarRename(avatar.id, event.target.value);
+                  setEditingAvatarNames((prev) => {
+                    const next = { ...prev };
+                    delete next[avatar.id];
+                    return next;
+                  });
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.target.blur();
+                  }
+                }}
+              />
+              {avatar.id === activeAvatarId && <span className="status-text">(active)</span>}
+            </div>
+          ))}
         </div>
         <div className="mode-row">
           <label>
@@ -869,6 +1069,16 @@ export default function App() {
               <option value="energetic">Energetic</option>
               <option value="sermon">Sermon</option>
               <option value="dramatic">Dramatic</option>
+            </select>
+          </label>
+
+          <label>
+            Breathing Style:
+            <select value={breathingStyle} onChange={handleBreathingStyleChange}>
+              <option value="normal">Normal</option>
+              <option value="calm">Calm</option>
+              <option value="energetic">Energetic</option>
+              <option value="deep">Deep / Sermon</option>
             </select>
           </label>
         </div>
@@ -923,6 +1133,144 @@ export default function App() {
           <div className="status-text">
             Active cue file: {cueFileName}
           </div>
+        </div>
+
+        <div className="cue-row cue-editor">
+          <strong>Cue Editor</strong>
+          <div className="status-text">
+            Build avatar-switch, gesture, and movement-preset cues without hand-writing JSON.
+            Mouth/lip-sync cues still come from the npm generation scripts or Rhubarb.
+          </div>
+
+          <form className="cue-editor-form" onSubmit={handleAddCue}>
+            <label>
+              Cue type:
+              <select value={cueDraft.category} onChange={handleCueCategoryChange}>
+                <option value="avatar">Avatar switch</option>
+                <option value="head">Head movement</option>
+                <option value="body">Body movement</option>
+                <option value="gesture">Gesture</option>
+                <option value="preset">Movement preset moment</option>
+              </select>
+            </label>
+
+            {cueDraft.category === "avatar" && (
+              <label>
+                Switch to avatar:
+                <select
+                  value={cueDraft.avatarId}
+                  onChange={(event) => setCueDraft((draft) => ({ ...draft, avatarId: event.target.value }))}
+                >
+                  {avatars.map((avatar) => (
+                    <option key={avatar.id} value={avatar.id}>
+                      {avatar.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {cueDraft.category === "preset" && (
+              <label>
+                Preset:
+                <select
+                  value={cueDraft.preset}
+                  onChange={(event) => setCueDraft((draft) => ({ ...draft, preset: event.target.value }))}
+                >
+                  <option value="neutral">Neutral</option>
+                  <option value="talking">Talking</option>
+                  <option value="energetic">Energetic</option>
+                  <option value="sermon">Sermon</option>
+                  <option value="dramatic">Dramatic</option>
+                </select>
+              </label>
+            )}
+
+            {["head", "body", "gesture"].includes(cueDraft.category) && (
+              <label>
+                Action:
+                <select
+                  value={cueDraft.action}
+                  onChange={(event) => setCueDraft((draft) => ({ ...draft, action: event.target.value }))}
+                >
+                  {GESTURE_ACTIONS[cueDraft.category].map((action) => (
+                    <option key={action} value={action}>
+                      {action}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label>
+              Start (s):
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={cueDraft.start}
+                onChange={(event) => setCueDraft((draft) => ({ ...draft, start: event.target.value }))}
+              />
+            </label>
+
+            <label>
+              End (s):
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={cueDraft.end}
+                onChange={(event) => setCueDraft((draft) => ({ ...draft, end: event.target.value }))}
+              />
+            </label>
+
+            {["head", "body", "gesture"].includes(cueDraft.category) && (
+              <label>
+                Intensity:
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={cueDraft.intensity}
+                  onChange={(event) => setCueDraft((draft) => ({ ...draft, intensity: event.target.value }))}
+                />
+              </label>
+            )}
+
+            <button type="submit">Add Cue</button>
+          </form>
+        </div>
+
+        <div className="cue-row timeline-preview">
+          <strong>Timeline Preview</strong>
+
+          <div className="status-text">
+            0.0s — {avatars.find((avatar) => avatar.id === activeAvatarId)?.name ?? "Avatar"} starts (default)
+          </div>
+
+          {timelineCues.length === 0 ? (
+            <div className="status-text">No avatar/gesture/preset cues yet — add one above or upload a cue file.</div>
+          ) : (
+            <ul className="timeline-list">
+              {[...timelineCues]
+                .sort((a, b) => a.start - b.start)
+                .map((cue) => (
+                  <li key={cue.id}>
+                    <span>
+                      {cue.start.toFixed(2)}s – {describeCue(cue)}
+                    </span>
+                    <button type="button" onClick={() => removeTimelineCue(cue.id)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
+
+          <button type="button" onClick={downloadTimelineJson} disabled={timelineCues.length === 0}>
+            Download Timeline JSON
+          </button>
         </div>
 
         <div className="transcript-row">
